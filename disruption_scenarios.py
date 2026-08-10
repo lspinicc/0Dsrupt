@@ -2,12 +2,9 @@ import numpy as np
 from scipy.special import ellipk, ellipe
 
 mu0 = 4e-7 * np.pi
-S_FW= 815   #[m^2]
-Sdiv= 385.4 #[m^2]
-Scp = 6*0.5*3.902 #[m^2]    contact point between VDE and limiter(s)
 
 # Template scenario. Variables are placeholders, to be filled with specific scenario-dependant quantities.
-SPR068 = {
+SCENARIO = {
     "name": "template",
     "R0": 1,  # [m]
     "a": 1,   # [m]    
@@ -33,6 +30,9 @@ SPR068 = {
     "Tsep": 1,   # [eV]
     "Tcore": 1,  # [eV]
     "tauW": 0.2, # [s]
+    S_FW: 1,     # [m^2]  # Surface of wetted area on PFCs
+    S_div: 1,     # [m^2]  # Surface of wetted area on divertor
+    S_cp: 1,      # [m^2]  # Surface of wetted area on limiters
     #
     # OUTPUTS
     #
@@ -110,14 +110,14 @@ JET96867 = {
 
 def readFromXls(scenarioLabel,cc,filename="FrancisSpreadsheet.xlsx"):
     """
-    Builds a scenario dictionary, shaped ater SPR068, automatically reading the data from the local copy of Francis's spreadsheed
+    Builds a scenario dictionary, shaped ater SCENARIO, automatically reading the data from the local copy of Francis's spreadsheed
 
         Input:
             - scenarioLabel: name of the dictionary containing the new scenario
             - cc:            corresponding column on Francis's spreadsheet, according to Excel nomenclature: 'A','B'...'Z','AA','AB'
 
         Output:
-            - scenarioOut:   new dictionary, shaped after SPR068, containing the new data reported on Francis's sreadsheet   
+            - scenarioOut:   new dictionary, shaped after SCENARIO, containing the new data reported on Francis's sreadsheet   
     """
     # url = "https://ukaeauk.sharepoint.com/:x:/r/sites/STEP_Plasma_B1_2/_layouts/15/"
     #     +"Doc.aspx?sourcedoc=%7B21AB2BE7-165D-4F7F-9075-8F4793F4A7F7%7D&file=Concept_Plasma_Comparison.xlsx"
@@ -139,7 +139,7 @@ def readFromXls(scenarioLabel,cc,filename="FrancisSpreadsheet.xlsx"):
     def row(rowName):
         return rowName-2
     
-    scenarioOut = SPR068.copy()
+    scenarioOut = SCENARIO.copy()
 
     scenarioOut["name"]  = scenarioLabel
     scenarioOut["R0"]    = file.iloc[row(10),col(cc)]
@@ -541,6 +541,9 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             -  scenarioName["WTQ_rad"]:         array of radiated loads on PFC for CQ
 
     """
+    Sdiv = scenarioName["S_div"]
+    S_FW = scenarioName["S_FW"]
+    Scp = scenarioName["S_cp"]
     Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
     #Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
@@ -1014,6 +1017,10 @@ def Melt1plot(scenario,SPR="SPR-69/B",PF=1):
     qcritTQr = qmelt(scenario["tauTQ"]*4)
     qcritCQ  = qmelt(scenario["tauCQ"])
 
+    Sdiv = scenario["S_div"]
+    S_FW = scenario["S_FW"]
+    Scp = scenario["S_cp"]
+
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
     Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
     # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
@@ -1093,6 +1100,10 @@ def Melt2plot(scenario,SPR="SPR-69/B",PF=1):
     T0    = 550 + 273.15
     Tmelt = 3695 - T0 # [K]
     Tvap  = 6203 - T0 # [K]
+
+    Sdiv = scenario["S_div"]
+    S_FW = scenario["S_FW"]
+    Scp = scenario["S_cp"]
 
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
     Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
@@ -1275,40 +1286,13 @@ if __name__ == "__main__":
 #    colArray_new = ['C','D','E','F','G','H','I']
 
     filename = "FrancisSpreadsheet_new1.xlsx"
-    # filename = "FrancisSpreadsheet_SPP3.xlsx"
-    # filename = "FrancisSpreadsheet_SPP1.xlsx"
-
-    if (filename=="FrancisSpreadsheet.xlsx"):
-        reference=readFromXls('reference','BG')
-    if (filename=="FrancisSpreadsheet_new1.xlsx"):
-        reference=readFromXls('reference','F',filename=filename)
-        name = "SPR-69/B"
-    if (filename=="FrancisSpreadsheet_SPP1.xlsx"):
-        reference=readFromXls('reference','E',filename=filename)
-        name = "SPR-46/clean"
-    if (filename=="FrancisSpreadsheet_SPP3.xlsx"):
-        reference=readFromXls('reference','F',filename=filename)
-        name = 'SPP-3/temporary'
-        Scp = Scp*0.73473
-        S_FW = S_FW*0.73473
-        Sdiv = Sdiv*0.73473
-
-    #reference=readFromXls('SPR-70','G',filename=filename)
-    # name = "SPR-68/A"
-    # reference=readFromXls('reference','C',filename=filename)
-
-    # name = "SPR-70"
-    # reference=readFromXls('reference','G',filename=filename)
-
-    # name = "SPR-68/B"
-    # reference=readFromXls('reference','D',filename=filename)
+    reference=readFromXls('reference','C',filename=filename)
+    name     = "Case Study"
 
     Predictions(scenarioName=reference)
-    # #scenarioCloud(reference=reference, colArray=['C','D','E','F','G'], filename=filename, modeHL='L')
-    # #scenarioCloud(reference=reference, colArray=['C','D','E','F','G','H','I','J'], filename=filename, modeHL='L')
     out=Melt1plot(scenario=reference,SPR=name,PF=1)
     out=Melt2plot(scenario=reference,SPR=name,PF=1)
 
-    #dependancePlots(scenarioName=SPR068,scenarioBounds=SPR068_MinMax)
+    #dependancePlots(scenarioName=SCENARIO,scenarioBounds=SCENARIO_MinMax)
 
 
