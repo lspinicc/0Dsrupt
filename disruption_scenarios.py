@@ -264,7 +264,7 @@ def DTcool(scenarioName):
         input:   name of a python dictionary relative to a scenario
         output:  time of cooling
     """
-    return 0.6 * scenarioName["a"] * scenarioName["q95"]
+    return 0.6 * scenarioName["a"] * scenarioName["q95"] * 1e-3  # [sec.]
 
 # The Power load on the divertor has a ramp-up timescale of 1 tauTQ and a decay timescale of 3 tauTQ
 def tauTQ(scenarioName):
@@ -274,7 +274,7 @@ def tauTQ(scenarioName):
         input:   name of a python dictionary relative to a scenario
         output:  tau_TQ
     """
-    return 0.33 * scenarioName["a"]
+    return 0.33 * scenarioName["a"] * 1e-3   # [sec.]
 
 def tauCQlinmin(scenarioName, linexp="lin", mitigatedVDE=0, MDlikely=0, longCQ=0):
     """
@@ -297,7 +297,7 @@ def tauCQlinmin(scenarioName, linexp="lin", mitigatedVDE=0, MDlikely=0, longCQ=0
     if (MDlikely): tauCQ = SLstar*1.4
     if (longCQ): tauCQ = 3*SLstar#scenarioName["longCQtime"]#*scenarioName["a"]/SPR045["a"]
     if (linexp == "exp"): tauCQ *= 0.6 / np.log(4)
-    return tauCQ
+    return tauCQ * 1e-3    # [seconds]
 
 def qCyl(scenarioName):
     """
@@ -358,7 +358,7 @@ def lambdaMHD(scenarioName,model='HD'):
                 scenarioName["B0"] ** 2 * λ )
 
     lamMHD = λ 
-    print('lambdaHD[{lamhd}],   alphaMHD[{amhd}]  >?  alphaCrit[{acrit}]'.format(lamhd=lamMHD,amhd=alphaMHD,acrit=alphaCrit))
+    # print('lambdaHD[{lamhd}],   alphaMHD[{amhd}]  >?  alphaCrit[{acrit}]'.format(lamhd=lamMHD,amhd=alphaMHD,acrit=alphaCrit))
     if (alphaMHD > alphaCrit) :
         lamMHD *= ( alphaMHD / alphaCrit )**(7./9)
     return lamMHD #[m]
@@ -588,7 +588,7 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
         Wth     = scenarioName["Wth"]
         RPF     = np.pow(4,peakingFactors) * np.ones(8)     # Radiation peaking factor (TPF x PPF)
         TPF     = np.ones(8)                                # Conduction toroidal peaking factor 
-        tau     = tauTQ(scenarioName) * 1e-3
+        tau     = tauTQ(scenarioName) 
         scenarioName["tauTQ"] = np.ones(8) * tau
         
         for i in range(8):
@@ -620,7 +620,7 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
         tau     = np.array([ tauCQlinmin(scenarioName,MDlikely=1)     , tauCQlinmin(scenarioName)                , 
                              tauCQlinmin(scenarioName)                , tauCQlinmin(scenarioName,longCQ=1)       ,
                              tauCQlinmin(scenarioName)                , tauCQlinmin(scenarioName,longCQ=1)       ,
-                             tauCQlinmin(scenarioName,mitigatedVDE=1) , tauCQlinmin(scenarioName,mitigatedVDE=1)   ]) * 1e-3
+                             tauCQlinmin(scenarioName,mitigatedVDE=1) , tauCQlinmin(scenarioName,mitigatedVDE=1)   ]) 
         scenarioName["tauCQ"] = tau
 
         for i in range(8):
@@ -641,15 +641,20 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             scenarioName["WCQ_con"][i] = Emax_con1 * Swet_cond[i]
             
 
-def Predictions(scenarioName):
+def Predictions(scenarioName,additional_output_txt=False):
     """
         Predictions of the model are printed in the output file: 
         
                 <scenarioName>_DisruptionScenarios.txt
         
-            input:  name of a python dictionary relative to a scenario
-            output: file output
-    
+            inputs:  
+              - scenarioName:           name of a python dictionary relative to a scenario
+              - additional_output_txt:  bool. Set to True to produce a .txt file with the main outputs.
+            
+            output: 
+              - "scenarioName" fields are updated with model outputs.
+
+        
     """
     tE = tauE(scenarioName=scenarioName,mode='L')
     t_preTQ = DTcool(scenarioName)
@@ -668,222 +673,229 @@ def Predictions(scenarioName):
         return E
     
     scenarioName["tauPreTQ"] = [ tE , 0 , 0 , 0 , 0 , 0 , t_preTQ , t_preTQ ]
-    with open(f"{scenarioName['name']}_DisruptionsPredictions.txt", 'w', encoding='utf-8') as f:
-        f.write("_______\nPre-TQ:\n")
-        f.write("\t                 \t\tDuration:\t\tConduct. W_th,loss:\t\tRadiated W_th,loss:\t\tSOL broadening:\n")
-        f.write("\t1) Major Disruption:\t{:.3} s\t\t\t\t{:.3} MJ\t\t\t\t0.000 MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
-            tE,
-            scenarioName["Wth"] / 2e6,
-            lamEich*1e3, lam_q * 1e3  ))
-        f.write("\t3) Cold VDE, fast CQ:\tsee MHD modelling\t{:.3} MJ\t\t\t\t0.000 MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
-            scenarioName["Wth"] / 2e6, 
-            lamEich*1e3, lam_q * 1e3  ))
-        f.write("\t4) Cold VDE, fast CQ:\tsee MHD modelling\t{:.3} MJ\t\t\t\t0.000 MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
-            scenarioName["Wth"] / 2e6, 
-            lamEich*1e3, lam_q * 1e3  ))
-        f.write("\t7) Mitigated MDs:    \t{:.3} ms\t\t\t\t0.000 MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
-            t_preTQ,
-            scenarioName["Wth"] * .2e-6,
-            lamEich*1e3, lam_q * 1e3  ))
-        f.write("\t8) Mitigated VDE:    \t{:.3} ms\t\t\t\t0.000 MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
-            t_preTQ,
-            scenarioName["Wth"] * .2e-6,
-            lamEich*1e3, lam_q * 1e3  ))
 
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-        W_PFC(scenarioName=scenarioName,phase='TQ',peakingFactors=0)
-
-        f.write("\n___\nTQ:\n")
-        f.write(
-            "\t                 \t\t"
-            +"Ramp up time for\t\tDecay time for \t\t\tW_th losses \t\tW_th losses:\t\tSOL broadening:\t\t\t\t"
-            +"Ramp up t_vs\t\t\tRamp down t_vs\t\t\t\tEmax cond\t\t\tEmax rad\n")
-        f.write(
-            "\t                 \t\t"
-            +"divertor heat load\t\tdivertor heat load\t\t(conducted):\t\t(radiated):\t\t\t (lam_q x 1)\t\t"
-            +" ms\t\t\t\t ms\t\t\t\tMJ\t\t\t\tMJ\n")
-        f.write(
-            "\t1) Major Disruption:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][0]*1e3, 
-                scenarioName["tauTQ"][0]*3e3, 
+    if additional_output_txt:
+        with open(f"{scenarioName['name']}_DisruptionsPredictions.txt", 'w', encoding='utf-8') as f:
+            f.write("_______\nPre-TQ:\n")
+            f.write("\t                 \t\tDuration:\t\tConduct. W_th,loss:\t\tRadiated W_th,loss:\t\tSOL broadening:\n")
+            f.write("\t1) Major Disruption:\t{:.3} s\t\t\t\t{:.3} MJ\t\t\t\t0.000 MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
+                tE,
+                scenarioName["Wth"] / 2e6,
+                lamEich*1e3, lam_q * 1e3  ))
+            f.write("\t3) Cold VDE, fast CQ:\tsee MHD modelling\t{:.3} MJ\t\t\t\t0.000 MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
                 scenarioName["Wth"] / 2e6, 
-                0.0, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][0]*1e3,
-                scenarioName["tvs_TQ_con2"][0]*1e3,
-                (scenarioName["WTQ_con1"][0]+scenarioName["WTQ_con2"][0])/1e6,
-                scenarioName["WTQ_rad"][0]/1e6 ))
-        
-        f.write(
-            "\t2) Major D. strong: \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][1]*1e3, 
-                scenarioName["tauTQ"][1]*3e3, 
-                scenarioName["Wth"] / 1e6, 
-                0.0, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][1]*1e3,
-                scenarioName["tvs_TQ_con2"][1]*1e3,
-                (scenarioName["WTQ_con1"][1]+scenarioName["WTQ_con2"][1])/1e6,
-                scenarioName["WTQ_rad"][1]/1e6 ))
-        
-        f.write(
-            "\t3) Cold VDE, fast CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][2]*1e3, 
-                scenarioName["tauTQ"][2]*3e3, 
+                lamEich*1e3, lam_q * 1e3  ))
+            f.write("\t4) Cold VDE, fast CQ:\tsee MHD modelling\t{:.3} MJ\t\t\t\t0.000 MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
                 scenarioName["Wth"] / 2e6, 
-                0.0, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][2]*1e3,
-                scenarioName["tvs_TQ_con2"][2]*1e3,
-                (scenarioName["WTQ_con1"][2]+scenarioName["WTQ_con2"][2])/1e6,
-                scenarioName["WTQ_rad"][2]/1e6 ))
+                lamEich*1e3, lam_q * 1e3  ))
+            f.write("\t7) Mitigated MDs:    \t{:.3} ms\t\t\t\t0.000 MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
+                t_preTQ*1e3,
+                scenarioName["Wth"] * .2e-6,
+                lamEich*1e3, lam_q * 1e3  ))
+            f.write("\t8) Mitigated VDE:    \t{:.3} ms\t\t\t\t0.000 MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3}/{:.3} mm\n".format(
+                t_preTQ*1e3,
+                scenarioName["Wth"] * .2e-6,
+                lamEich*1e3, lam_q * 1e3  ))
 
-        f.write(
-            "\t4) Cold VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][3]*1e3, 
-                scenarioName["tauTQ"][3]*3e3, 
-                scenarioName["Wth"] / 2e6, 
-                0.0, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][3]*1e3,
-                scenarioName["tvs_TQ_con2"][3]*1e3,
-                (scenarioName["WTQ_con1"][3]+scenarioName["WTQ_con2"][3])/1e6,
-                scenarioName["WTQ_rad"][3]/1e6 ))
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        f.write(
-            "\t5) Hot VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][4]*1e3, 
-                scenarioName["tauTQ"][4]*3e3, 
-                scenarioName["Wth"] / 1e6, 
-                0.0, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][4]*1e3,
-                scenarioName["tvs_TQ_con2"][4]*1e3,
-                (scenarioName["WTQ_con1"][4]+scenarioName["WTQ_con2"][4])/1e6,
-                scenarioName["WTQ_rad"][4]/1e6 ))
+    W_PFC(scenarioName=scenarioName,phase='TQ',peakingFactors=0)
+
+    if additional_output_txt:
+        with open(f"{scenarioName['name']}_DisruptionsPredictions.txt", 'a', encoding='utf-8') as f:
+            f.write("\n___\nTQ:\n")
+            f.write(
+                "\t                 \t\t"
+                +"Ramp up time for\t\tDecay time for \t\t\tW_th losses \t\tW_th losses:\t\tSOL broadening:\t\t\t\t"
+                +"Ramp up t_vs\t\t\tRamp down t_vs\t\t\t\tEmax cond\t\t\tEmax rad\n")
+            f.write(
+                "\t                 \t\t"
+                +"divertor heat load\t\tdivertor heat load\t\t(conducted):\t\t(radiated):\t\t\t (lam_q x 1)\t\t"
+                +" ms\t\t\t\t ms\t\t\t\tMJ\t\t\t\tMJ\n")
+            f.write(
+                "\t1) Major Disruption:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][0]*1e3, 
+                    scenarioName["tauTQ"][0]*3e3, 
+                    scenarioName["Wth"] / 2e6, 
+                    0.0, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][0]*1e3,
+                    scenarioName["tvs_TQ_con2"][0]*1e3,
+                    (scenarioName["WTQ_con1"][0]+scenarioName["WTQ_con2"][0])/1e6,
+                    scenarioName["WTQ_rad"][0]/1e6 ))
+            
+            f.write(
+                "\t2) Major D. strong: \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][1]*1e3, 
+                    scenarioName["tauTQ"][1]*3e3, 
+                    scenarioName["Wth"] / 1e6, 
+                    0.0, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][1]*1e3,
+                    scenarioName["tvs_TQ_con2"][1]*1e3,
+                    (scenarioName["WTQ_con1"][1]+scenarioName["WTQ_con2"][1])/1e6,
+                    scenarioName["WTQ_rad"][1]/1e6 ))
+            
+            f.write(
+                "\t3) Cold VDE, fast CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][2]*1e3, 
+                    scenarioName["tauTQ"][2]*3e3, 
+                    scenarioName["Wth"] / 2e6, 
+                    0.0, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][2]*1e3,
+                    scenarioName["tvs_TQ_con2"][2]*1e3,
+                    (scenarioName["WTQ_con1"][2]+scenarioName["WTQ_con2"][2])/1e6,
+                    scenarioName["WTQ_rad"][2]/1e6 ))
+
+            f.write(
+                "\t4) Cold VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][3]*1e3, 
+                    scenarioName["tauTQ"][3]*3e3, 
+                    scenarioName["Wth"] / 2e6, 
+                    0.0, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][3]*1e3,
+                    scenarioName["tvs_TQ_con2"][3]*1e3,
+                    (scenarioName["WTQ_con1"][3]+scenarioName["WTQ_con2"][3])/1e6,
+                    scenarioName["WTQ_rad"][3]/1e6 ))
+
+            f.write(
+                "\t5) Hot VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][4]*1e3, 
+                    scenarioName["tauTQ"][4]*3e3, 
+                    scenarioName["Wth"] / 1e6, 
+                    0.0, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][4]*1e3,
+                    scenarioName["tvs_TQ_con2"][4]*1e3,
+                    (scenarioName["WTQ_con1"][4]+scenarioName["WTQ_con2"][4])/1e6,
+                    scenarioName["WTQ_rad"][4]/1e6 ))
+            
+            f.write(
+                "\t6) Hot VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][5]*1e3, 
+                    scenarioName["tauTQ"][5]*3e3, 
+                    scenarioName["Wth"] / 1e6, 
+                    0.0, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][5]*1e3,
+                    scenarioName["tvs_TQ_con2"][5]*1e3,
+                    (scenarioName["WTQ_con1"][5]+scenarioName["WTQ_con2"][5])/1e6,
+                    scenarioName["WTQ_rad"][5]/1e6 ))
+
+            f.write(
+                "\t7) Mitigated MDs:   \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][6]*1e3, 
+                    scenarioName["tauTQ"][6]*3e3, 
+                    scenarioName["Wth"] / 1e6 * 0.8 * 0.2, 
+                    scenarioName["Wth"] / 1e6 * 0.8 ** 2, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][6]*1e3,
+                    scenarioName["tvs_TQ_con2"][6]*1e3,
+                    (scenarioName["WTQ_con1"][6]+scenarioName["WTQ_con2"][6])/1e6,
+                    scenarioName["WTQ_rad"][6]/1e6 ))
+
+            f.write(
+                "\t8) Mitigated VDE:   \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                    scenarioName["tauTQ"][7]*1e3, 
+                    scenarioName["tauTQ"][7]*3e3, 
+                    scenarioName["Wth"] / 1e6 * 0.8 * 0.2, 
+                    scenarioName["Wth"] / 1e6 * 0.8 ** 2, 
+                    lam_q * 1e3,
+                    scenarioName["tvs_TQ_con1"][7]*1e3,
+                    scenarioName["tvs_TQ_con2"][7]*1e3,
+                    (scenarioName["WTQ_con1"][7]+scenarioName["WTQ_con2"][7])/1e6,
+                    scenarioName["WTQ_rad"][7]/1e6 ))
         
-        f.write(
-            "\t6) Hot VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][5]*1e3, 
-                scenarioName["tauTQ"][5]*3e3, 
-                scenarioName["Wth"] / 1e6, 
-                0.0, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][5]*1e3,
-                scenarioName["tvs_TQ_con2"][5]*1e3,
-                (scenarioName["WTQ_con1"][5]+scenarioName["WTQ_con2"][5])/1e6,
-                scenarioName["WTQ_rad"][5]/1e6 ))
+    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~        
+    
+    HCF = [0.075, 0.075, 0.12, 0.2, 0.12, 0.2 , 0.05, 0.1  ]              # halo current fractions
+    W_PFC(scenarioName=scenarioName,phase='CQ',peakingFactors=0)
 
-        f.write(
-            "\t7) Mitigated MDs:   \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][6]*1e3, 
-                scenarioName["tauTQ"][6]*3e3, 
-                scenarioName["Wth"] / 1e6 * 0.8 * 0.2, 
-                scenarioName["Wth"] / 1e6 * 0.8 ** 2, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][6]*1e3,
-                scenarioName["tvs_TQ_con2"][6]*1e3,
-                (scenarioName["WTQ_con1"][6]+scenarioName["WTQ_con2"][6])/1e6,
-                scenarioName["WTQ_rad"][6]/1e6 ))
-
-        f.write(
-            "\t8) Mitigated VDE:   \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                scenarioName["tauTQ"][7]*1e3, 
-                scenarioName["tauTQ"][7]*3e3, 
-                scenarioName["Wth"] / 1e6 * 0.8 * 0.2, 
-                scenarioName["Wth"] / 1e6 * 0.8 ** 2, 
-                lam_q * 1e3,
-                scenarioName["tvs_TQ_con1"][7]*1e3,
-                scenarioName["tvs_TQ_con2"][7]*1e3,
-                (scenarioName["WTQ_con1"][7]+scenarioName["WTQ_con2"][7])/1e6,
-                scenarioName["WTQ_rad"][7]/1e6 ))
-        
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~        
-        
-        HCF = [0.075, 0.075, 0.12, 0.2, 0.12, 0.2 , 0.05, 0.1  ]              # halo current fractions
-        W_PFC(scenarioName=scenarioName,phase='CQ',peakingFactors=0)
+    if additional_output_txt:
         WthCQ = np.ones(8)
         for i in range(8): 
             WthCQ[i] = Wpol(scenarioName,HCF=HCF[i])
 
-        f.write("\n___\nCQ:\n")
-        f.write("\t                     \tLinear decay t:\t\tExp decay t:\t\tW_th losses \t\tW_th losses:\t\ttvs(S=1) conduc\t\tW conduc\t\tW radiat\n")
-        f.write("\t                     \t               \t\t            \t\t(conducted):\t\t(radiated): \t\t      [s]        \t\t  [MJ]  \t\t  [MJ]  \n")
-        i = 0
-        f.write("\t1) Major Disruption: \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=1), 
-            WthCQ[i] * 1, 
-            WthCQ[i] * 0.,
-            scenarioName["tvs_CQ_con"][i]*1e3,  
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 1
-        f.write("\t2) Major D. strong: \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=0), 
-            WthCQ[i] * 1, 
-            WthCQ[i] * 0.,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 2
-        f.write("\t3) Cold VDE, fast CQ:\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=0), 
-            WthCQ[i] * 1, 
-            WthCQ[i] * 0.,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 3
-        f.write("\t4) Cold VDE, slow CQ:\t{:.3} ms\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", longCQ=1), 
-            WthCQ[i] * 0.7, 
-            WthCQ[i] * 0.3,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 4
-        f.write("\t5) Hot VDE,  fast CQ:\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=0), 
-            WthCQ[i] * 1, 
-            WthCQ[i] * 0.,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 5
-        f.write("\t6) Hot VDE,  slow CQ:\t{:.3} ms\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", longCQ=1), 
-            WthCQ[i] * 0.7, 
-            WthCQ[i] * 0.3,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 6
-        f.write("\t7) Mitigated MDs:    \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=1), 
-            WthCQ[i] * 0.2, 
-            WthCQ[i] * 0.8,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
-        i = 7
-        f.write("\t8) Mitigated VDE:    \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-            scenarioName["tauCQ"][i]*1e3,
-            tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=1), 
-            WthCQ[i] * 0.2, 
-            WthCQ[i] * 0.8,
-            scenarioName["tvs_CQ_con"][i]*1e3, 
-            scenarioName["WCQ_con"][i]*1e-6,
-            scenarioName["WCQ_rad"][i]*1e-6   ))
+        with open(f"{scenarioName['name']}_DisruptionsPredictions.txt", 'a', encoding='utf-8') as f:    
+            f.write("\n___\nCQ:\n")
+            f.write("\t                     \tLinear decay t:\t\tExp decay t:\t\tW_th losses \t\tW_th losses:\t\ttvs(S=1) conduc\t\tW conduc\t\tW radiat\n")
+            f.write("\t                     \t               \t\t            \t\t(conducted):\t\t(radiated): \t\t      [s]        \t\t  [MJ]  \t\t  [MJ]  \n")
+            i = 0
+            f.write("\t1) Major Disruption: \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=1)*1e3, 
+                WthCQ[i] * 1, 
+                WthCQ[i] * 0.,
+                scenarioName["tvs_CQ_con"][i]*1e3,  
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 1
+            f.write("\t2) Major D. strong: \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=0)*1e3, 
+                WthCQ[i] * 1, 
+                WthCQ[i] * 0.,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 2
+            f.write("\t3) Cold VDE, fast CQ:\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=0)*1e3, 
+                WthCQ[i] * 1, 
+                WthCQ[i] * 0.,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 3
+            f.write("\t4) Cold VDE, slow CQ:\t{:.3} ms\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", longCQ=1)*1e3, 
+                WthCQ[i] * 0.7, 
+                WthCQ[i] * 0.3,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 4
+            f.write("\t5) Hot VDE,  fast CQ:\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=0, MDlikely=0)*1e3, 
+                WthCQ[i] * 1, 
+                WthCQ[i] * 0.,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 5
+            f.write("\t6) Hot VDE,  slow CQ:\t{:.3} ms\t\t\t{:.3} ms\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", longCQ=1)*1e3, 
+                WthCQ[i] * 0.7, 
+                WthCQ[i] * 0.3,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 6
+            f.write("\t7) Mitigated MDs:    \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=1)*1e3, 
+                WthCQ[i] * 0.2, 
+                WthCQ[i] * 0.8,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
+            i = 7
+            f.write("\t8) Mitigated VDE:    \t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
+                scenarioName["tauCQ"][i]*1e3,
+                tauCQlinmin(scenarioName, linexp="exp", mitigatedVDE=1)*1e3, 
+                WthCQ[i] * 0.2, 
+                WthCQ[i] * 0.8,
+                scenarioName["tvs_CQ_con"][i]*1e3, 
+                scenarioName["WCQ_con"][i]*1e-6,
+                scenarioName["WCQ_rad"][i]*1e-6   ))
 
-    f.close()
+        f.close()
 
 def scenarioCloud(reference,colArray=['BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM'],filename='FrancisSpreadsheet.xlsx',modeHL='L'):
     """
@@ -913,8 +925,8 @@ def scenarioCloud(reference,colArray=['BD','BE','BF','BG','BH','BI','BJ','BK','B
 
     #    tE_vec[i]   = tauE(scenario)
         tE_vec[i]   = tauE(scenarioName=scenario,mode=modeHL)
-        t2_vec[i]   = DTcool(scenario)
-        tCQ_vec[i]  = tauCQlinmin(scenario)
+        t2_vec[i]   = DTcool(scenario)*1e3
+        tCQ_vec[i]  = tauCQlinmin(scenario)*1e3
         lQ_vec[i]   = lambdaMHD(scenario)*1e3
         lEich[i]    = lambdaEich(scenario)*1e3
         Wth_vec[i]  = scenario["Wth"]*1e-6
@@ -1292,22 +1304,22 @@ def validation(number=0) :
     print("qmelt CQ [MW/m2]: ",qcrit_W_CQ/1e6," with Tungsten (divertor)")
     print("---------------------------------------------------------------")
     print("W_TQ conduct. [MJ] ",scenario["Wth"]*0.8*0.2e-6)
-    print("tauTQ [ms]:        ",tauTQ(scenario))
+    print("tauTQ [ms]:        ",tauTQ(scenario)*1e3)
     print("S_limiter [m2] ~   ",4)
     print("q_plasma [MW/m2]   ",0.2*0.8*scenario["Wth"]/(4*tauTQ(scenario))/1e6)
     print("---------------------------------------------------------------")
     print("W_CQ conduct. [MJ] ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.2e-6)
-    print("tauCQ [ms]:        ",tau_CQ_ave)
+    print("tauCQ [ms]:        ",tau_CQ_ave*1e3)
     print("S_limiter [m2] ~   ",4)
     print("q_plasma [MW/m2]   ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.2/(4*tau_CQ_ave)/1e6)
     print("---------------------------------------------------------------")
     print("W_TQ rad [MJ]      ",scenario["Wth"] * 0.8**2 / 1e6)
-    print("tauCQ [ms]:        ",tauTQ(scenario))
+    print("tauCQ [ms]:        ",tauTQ(scenario)*1e3)
     print("S_PFC [m2] ~       ",240)
     print("q_plasma [MW/m2]   ",scenario["Wth"] * 0.8**2/(240*tauTQ(scenario))/1e6)
     print("---------------------------------------------------------------")
     print("W_CQ rad [MJ]      ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.8e-6)
-    print("tauCQ [ms]:        ",tau_CQ_ave)
+    print("tauCQ [ms]:        ",tau_CQ_ave*1e3)
     print("S_PFC [m2] ~       ",240)
     print("q_plasma [MW/m2]   ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.8/(240*tau_CQ_ave)/1e6)
     

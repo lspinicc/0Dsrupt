@@ -1,3 +1,5 @@
 *.txt
-*.xlsx
+STEP*
+SPR*
+SPP*
 __pycache__
