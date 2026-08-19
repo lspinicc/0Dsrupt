@@ -85,7 +85,7 @@ JET96867 = {
     "B0": 2.7,
     "q95": 3.0, # [9, 12] # Taken from file "SPR68_DDN_4low.geqdsk" in FRIDA simulation: https://simdb.step.ukaea.uk/alias/SPR68_DDN
     "Csect": 5.38,  # [m2]      # 46.86 <--- V / (2 * pi * R0). 48.38 <---- data file from FIESTA simulation
-    "Volume": 100,  # [m3]
+    "Volume": 146,  # [m3]
     "Wth": 7e6,  # [W]      # Tile BD-56 (SPR-068 / post CML5 pivot) in [1]
     "ne": 1.e20,  # [m-3]
     "P_SOL": 29e6+4e6,  # [W]  # P_SOL = (0.95*P_fus/5 + P_aux),    in this case, Pfus=0
@@ -514,7 +514,7 @@ def Wpol(scenarioName,li3_betap="li3",HCF=0.):
     if (li3_betap == "betap"):
         return 2 * scenarioName["Wth"] / (3 * scenarioName["betap"]) * 1.1
 
-def Wcoupled(scenarioName,lin_exp=0):
+def Wcoupled(scenarioName,lin_exp=0,VDE=True):
     """
     Computes the coupled magnetic energy. Only induced currents by Ip drop are considered. 
     Induced currents coming from plasma motion are more scenario dependent and not considered to this point.
@@ -526,17 +526,27 @@ def Wcoupled(scenarioName,lin_exp=0):
         Outputs:
           - Wcoupled:          coupled magnetic energy during CQ
     """
-    a_wall = scenarioName["a"] * scenarioName["kappa"]
-    R_wall = scenarioName["R0"]
+    # a = lambda x: (1 + 1.81*x**0.5 + 2.05*x) * np.log(8/x) - (2 + 9.25*x**0.5 - 1.21*x)
+    # b = lambda x: (0.73*x**0.5) * (1 + 2*x**4 - 6*x**5 + 3.7*x**6)        
+    # eps = scenarioName["a"] / scenarioName["R0"]
+    # L = mu0 * R_wall * a(eps)*(1-eps)/(1-eps+scenarioName["kappa"]*b(eps)) #( np.log(8*R_wall/a_wall) - 2 )
+
+    a_wall = scenarioName["a"] * (1+(scenarioName["kappa"]))/2
+    R_wall = scenarioName["R0"] 
     k0= (4*a_wall*R_wall)**0.5 / (a_wall + R_wall)
     L = mu0 * R_wall * ( np.log(8*R_wall/a_wall) - 2 )
-    M = mu0/(2*np.pi) * (a_wall + R_wall) * ((1-k0**2/2)*ellipk(k0)-ellipe(k0))
+    # M = mu0/(2*np.pi) * (a_wall + R_wall) * ((1-k0**2/2)*ellipk(k0)-ellipe(k0))
+    M = L
+    # M = 2 * 6e-7 * scenarioName["tauW"] / scenarioName["a"]
 
     Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / scenarioName["tauCQ"]  * ( 1 - np.exp(-scenarioName["tauCQ"]/scenarioName["tauW"]) ) )**2 / (2 * L)
     if lin_exp == 1:
         tauCQ = scenarioName["tauCQ"] * 0.6 / np.log(4) 
         Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / (scenarioName["tauCQ"]-scenarioName["tauW"]) * ( np.exp(-1) - np.exp(-scenarioName["tauCQ"]/scenarioName["tauW"]) ) )**2 / (2 * L)
 
+    if VDE:
+        Wcoupled += scenarioName["Ip"] * ( scenarioName["kappa"]*scenarioName["a"] / 6 )**2 * 2 * np.pi * scenarioName["R0"]
+        
     return Wcoupled
 
 def W_PFC(scenarioName,phase,peakingFactors=0):
@@ -1285,18 +1295,19 @@ def validation(number=0) :
     tau_cool   = DTcool(scenarioName=scenario) + tauTQ(scenarioName=scenario)
     tau_CQ_min = tauCQlinmin(scenarioName=scenario,mitigatedVDE=1)
     tau_CQ_ave = tauCQlinmin(scenarioName=scenario,mitigatedVDE=1,longCQ=1)
-    Wrad       = scenario["Wth"] * (0.2 + 0.8**2) + Wpol(scenarioName=scenario,HCF=0.25)*0.8
     qcrit_Be   = qmelt(tauTQ(scenarioName=scenario),material="Be")
     qcrit_W    = qmelt(tauTQ(scenarioName=scenario),material="W")
     qcrit_Be_CQ= qmelt(tau_CQ_ave,material="Be")
     qcrit_W_CQ = qmelt(tau_CQ_ave,material="W")
 
-    scenario["tauCQ"] = tau_CQ_ave*1e-3
+    scenario["tauCQ"] = tau_CQ_ave
+
+    Wrad       = scenario["Wth"] * (0.2 + 0.8**2) + (Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=0))*0.8
 
     print("Ip [MA]:          ",scenario["Ip"]/1e6)
     print("tau[preTQ]+tau1:  ",tau_cool,"            [min,max]=[",0.7*tau_cool,",",1.3*tau_cool,"]")
-    print("tau[CQ] min.:     ",tau_CQ_min," [min,max]=["          ,0.7*tau_CQ_min,",",1.3*tau_CQ_min,"]")
-    print("tau[CQ] long:     ",tau_CQ_ave," [min,max]=["          ,0.7*tau_CQ_ave,",",1.3*tau_CQ_ave,"]")
+    print("tau[CQ] min.:     ",tau_CQ_min,"          [min,max]=["          ,0.7*tau_CQ_min,",",1.3*tau_CQ_min,"]")
+    print("tau[CQ] long:     ",tau_CQ_ave,"          [min,max]=["          ,0.7*tau_CQ_ave,",",1.3*tau_CQ_ave,"]")
     print("Wrad [MJ]:        ",Wrad/1e6,"             [min,max]=[",0.78e-6*Wrad,",",1.22e-6*Wrad,"]")
     print("qmelt TQ [MW/m2]: ",qcrit_Be/1e6," with Berillium (walls)")
     print("qmelt TQ [MW/m2]: ",qcrit_W/1e6," with Tungsten (divertor)")
