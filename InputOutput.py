@@ -9,6 +9,7 @@ import shutil
 import os
 import pandas as pd
 from disruption_scenarios import *
+from copy import deepcopy
 
 pm = "±"
 xx = "×"
@@ -180,7 +181,7 @@ def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
         return rowName - 2
 
     # A shallow copy preserves the behaviour of your original function.
-    scenarioOut = SCENARIO.copy()
+    scenarioOut = deepcopy(SCENARIO)
 
     if scenarioLabel is not None:
         scenarioOut["name"] = scenarioLabel
@@ -215,7 +216,7 @@ def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
 
     return scenarioOut
 
-def writeToXls(scenarioName, filename=None, overwriteSheet=True):
+def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
     """
     Writes the entries of a scenario dictionary to an Excel workbook.
 
@@ -251,6 +252,7 @@ def writeToXls(scenarioName, filename=None, overwriteSheet=True):
 
     ColumnNames_CQ = ["Duration ","(linear) [ms]",                  "Time const. ","(exp.) [ms]",
                       "Conducted","tᵥₛ [ms]",                        "Conducted ","W "+toSubscript("loss")+" [MJ]",
+                      "Coupled","W"+toSubscript("c")+" [MJ]",
                       "Radiated","W"+toSubscript("loss")+" [MJ]",   "Conducted ","Wpꜰᴄ [MJ]",
                       "Radiated ","Wpꜰᴄ [MJ]",                      "SOL width","[mm]",              
                       "TPF/HCF"," ",                                "Radiation peak"," tor/pol"]
@@ -456,7 +458,7 @@ def writeToXls(scenarioName, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 1,
             column= startColumn + 1 + j,
-            value = "{tauTQ:.2f}±30%".format(tauTQ=scenarioName["tauTQ"][j]*1e3)
+            value = "{tauTQ:.2f}±{err:d}%".format(tauTQ=scenarioName["tauTQ"][j]*1e3,err=int(errors["tauTQ"][j]*100))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 2,
@@ -467,7 +469,7 @@ def writeToXls(scenarioName, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 3,
             column= startColumn + 1 + j,
-            value = "{tauTQ:.2f}±30%".format(tauTQ=3*scenarioName["tauTQ"][j]*1e3)
+            value = "{tauTQ:.2f}±{err}%".format(tauTQ=3*scenarioName["tauTQ"][j]*1e3,err=int(errors["tauTQ"][j]*1e2))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 4,
@@ -604,7 +606,7 @@ def writeToXls(scenarioName, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 1,
             column= startColumn + 1 + j,
-            value = "≤{tauCQ:.2f}±30%".format(tauCQ=scenarioName["tauCQ"][j]*1e3)
+            value = "≤{tauCQ:.2f}±{err:d}%".format(tauCQ=scenarioName["tauCQ"][j]*1e3,err=int(errors["tauCQ"][j]*100))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 2,
@@ -615,7 +617,7 @@ def writeToXls(scenarioName, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 3,
             column= startColumn + 1 + j,
-            value = "≤{tauCQ:.2f}±30%".format(tauCQ=scenarioName["tauCQ"][j]*1e3*0.6/np.log(4))
+            value = "≤{tauCQ:.2f}±{err:d}%".format(tauCQ=scenarioName["tauCQ"][j]*1e3*0.6/np.log(4),err=int(errors["tauCQ"][j]*100))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 4,
@@ -633,87 +635,98 @@ def writeToXls(scenarioName, filename=None, overwriteSheet=True):
             column= startColumn + 1 + j,
             value = ["No VS","VS active"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
-        # Conducted W_loss from plasma
+        # Coupled magnetic energy W_coup
         [worksheet.cell(
             row   = startRow + 7,
             column= startColumn + 1 + j,
-            value = "{Wc:.1f}".format(Wc=scenarioName["WlossCQ"][j]*1e-6*C_cond[j])+errorWCQ[j]
+            value = "{Wc:.1f}±{err:d}%".format(Wc=scenarioName["WcoupCQ"][j]*1e-6*C_cond[j],err=int(errors["WcoupCQ"][j]*1e2))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 8,
+            column= startColumn + 1 + j,
+            value = " "
+        ) for j in range(len(disruptions))],
+        # Conducted W_loss from plasma
+        [worksheet.cell(
+            row   = startRow + 9,
+            column= startColumn + 1 + j,
+            value = "{Wc:.1f}±{err:d}%".format(Wc=scenarioName["WlossCQ"][j]*1e-6*C_cond[j],err=int(errors["WlossCQ"][j]*1e2))
+        ) for j in range(len(disruptions))],
+        [worksheet.cell(
+            row   = startRow + 10,
             column= startColumn + 1 + j,
             value = "{C:.1f}(Wₚ-W꜀)".format(C=C_cond[j])
         ) for j in range(len(disruptions))],
         # Radiated W_loss from plasma
         [worksheet.cell(
-            row   = startRow + 9,
+            row   = startRow + 11,
             column= startColumn + 1 + j,
             value = "{Wc:.1f}".format(Wc=scenarioName["WlossCQ"][j]*1e-6*C_rad[j])+errorWCQ[j]
         ) for j in range(len(disruptions))],
         [worksheet.cell(
-            row   = startRow + 10,
+            row   = startRow + 12,
             column= startColumn + 1 + j,
             value = "{C:.1f}(Wₚ-W꜀)".format(C=C_rad[j])
         ) for j in range(len(disruptions))],
         # Conducted W_PFC from plasma 
         [worksheet.cell(
-            row   = startRow + 11,
-            column= startColumn + 1 + j,
-            value = "{Wc:.1f}".format(Wc=scenarioName["WCQ_con"][j]*1e-6) + [errorWCQ[j] , "±30%"][int(scenarioName["isVSactive_CQ"][j])]
-        ) for j in range(len(disruptions))],
-        [worksheet.cell(
-            row   = startRow + 12,
-            column= startColumn + 1 + j,
-            value = [" ", "VS effect"][int(scenarioName["isVSactive_CQ"][j])]
-        ) for j in range(len(disruptions))],
-        # Radiated W_PFC from plasma 
-        [worksheet.cell(
             row   = startRow + 13,
             column= startColumn + 1 + j,
-            value = "{Wr:.1f}".format(Wr=scenarioName["WCQ_rad"][j]*1e-6) + errorWCQ[j]
+            value = "{Wc:.1f}".format(Wc=scenarioName["WCQ_con"][j]*1e-6) + [errorWCQ[j] , "±30%"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 14,
             column= startColumn + 1 + j,
             value = [" ", "VS effect"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
-        # SOL width
+        # Radiated W_PFC from plasma 
         [worksheet.cell(
             row   = startRow + 15,
+            column= startColumn + 1 + j,
+            value = "{Wr:.1f}".format(Wr=scenarioName["WCQ_rad"][j]*1e-6) + errorWCQ[j]
+        ) for j in range(len(disruptions))],
+        [worksheet.cell(
+            row   = startRow + 16,
+            column= startColumn + 1 + j,
+            value = [" ", "VS effect"][int(scenarioName["isVSactive_CQ"][j])]
+        ) for j in range(len(disruptions))],
+        # SOL width
+        [worksheet.cell(
+            row   = startRow + 17,
             column= startColumn + 1 + j,
             value = "{Eich:.2f}/{Gold:.2f}".format(Eich=scenarioName["lamEich"]*1e3,Gold=scenarioName["lamGoldston"]*1e3)
         ) for j in range(len(disruptions))],
         [worksheet.cell(
-            row   = startRow + 16,
+            row   = startRow + 18,
             column= startColumn + 1 + j,
             value = "Eich/HD"
         ) for j in range(len(disruptions))],
         # TPF & HCF
         [worksheet.cell(
-            row   = startRow + 17,
-            column= startColumn + 1 + j,
-            value = "{TPF:.1f}/{HCF:.3f}".format(TPF=TPF[j], HCF=HCF[j])
-        ) for j in range(len(disruptions))],
-        [worksheet.cell(
-            row   = startRow + 18,
-            column= startColumn + 1 + j,
-            value = " "
-        ) for j in range(len(disruptions))],
-        # Radiation Peaking
-        [worksheet.cell(
             row   = startRow + 19,
             column= startColumn + 1 + j,
-            value = "2.0/0.2"
+            value = "{TPF:.1f}/{HCF:.3f}".format(TPF=TPF[j], HCF=HCF[j])
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 20,
             column= startColumn + 1 + j,
             value = " "
         ) for j in range(len(disruptions))],
+        # Radiation Peaking
+        [worksheet.cell(
+            row   = startRow + 21,
+            column= startColumn + 1 + j,
+            value = "2.0/0.2"
+        ) for j in range(len(disruptions))],
+        [worksheet.cell(
+            row   = startRow + 22,
+            column= startColumn + 1 + j,
+            value = " "
+        ) for j in range(len(disruptions))],
         ]
 
     for j in range(len(disruptions)):
-        for i in (6,7,8,9):
+        for i in (6,7,8,9,10,11):
             TableCQ[i][j].fill=ShadedFill
         for i in range(len(TableCQ)):
             TableCQ[i][j].border=borders[i%2]

@@ -1,7 +1,10 @@
 import numpy as np
-from scipy.special import ellipk, ellipe
+#from scipy.special import ellipk, ellipe
+from copy import deepcopy
 
 mu0 = 4e-7 * np.pi
+
+C_cond_CQ = np.array([ 1.0 , 1.0 , 1.0 , 0.7 , 1.0 , 0.7 , 0.2 , 0.2  ])
 
 # Template scenario. Variables are placeholders, to be filled with specific scenario-dependant quantities.
 SCENARIO = {
@@ -37,14 +40,14 @@ SCENARIO = {
     "Zeff": 1,
     # __________
     # First wall 
-    "tauW": 0.2, # [s]
+    "tauW": 1,     # [s]
     "S_FW": 1,     # [m^2]  # Surface of wetted area on PFCs
     "S_div": 1,    # [m^2]  # Surface of wetted area on divertor
     "S_cp": 1,     # [m^2]  # Surface of wetted area on limiters
     # ________________
     # Other parameters
-    "WthCQ": 1,  # [W]  
     "longCQtime": 100.,  # [ms]     
+    "WthCQ": 0,   # [W]
     #
     # OUTPUTS
     #
@@ -59,68 +62,19 @@ SCENARIO = {
     "tvs_TQ_rad" : np.zeros(8),
     "isVSactive_con1" : np.zeros(8),
     "isVSactive_con2" : np.zeros(8),
-    "WthTQ2"   : np.zeros(8),
-    "WthTQrad" : np.zeros(8),
+    # "WthTQ2"   : np.zeros(8),
+    # "WthTQrad" : np.zeros(8),
     "WCQ_con"  : np.zeros(8),
     "WCQ_rad"  : np.zeros(8),
     "WlossCQ"  : np.zeros(8),
+    "WcoupCQ"  : np.zeros(8),
     "tvs_CQ_con" : np.zeros(8),
     "tvs_CQ_rad" : np.zeros(8),
     "isVSactive_CQ" : np.zeros(8),
-    "Wpol_c"   : np.zeros(8),
-    "Wpol_r"   : np.zeros(8),
+    # "Wpol_c"   : np.zeros(8),
+    # "Wpol_r"   : np.zeros(8),
     "lamEich"  : 0,
     "lamGoldston": 0
-}
-
-# Most quatities derived from the internal STEP presentation given by Francis Casson on 15/05/2025. Additional sources are indicated within.
-JET96867 = {
-    "name": "JET_discharge96867",
-    "R0": 2.96,  # [m]
-    "a": 1.25,  # [m]       # Same aspect ratio as for SPR-045
-    "Ip": 3e6,  # [A]
-    "li3": (23e6/1.1) * 4 / (mu0 * (2.96) * (3e6)**2), 
-    "kappa": 1.6,  #5.38/(np.pi*1.25)**2,  # Csection / (pi*a^2)
-    "delta": 1,  # No idea... 
-    "B0": 2.7,
-    "q95": 3.0, # [9, 12] # Taken from file "SPR68_DDN_4low.geqdsk" in FRIDA simulation: https://simdb.step.ukaea.uk/alias/SPR68_DDN
-    "Csect": 5.38,  # [m2]      # 46.86 <--- V / (2 * pi * R0). 48.38 <---- data file from FIESTA simulation
-    "Volume": 146,  # [m3]
-    "Wth": 7e6,  # [W]      # Tile BD-56 (SPR-068 / post CML5 pivot) in [1]
-    "ne": 1.e20,  # [m-3]
-    "P_SOL": 29e6+4e6,  # [W]  # P_SOL = (0.95*P_fus/5 + P_aux),    in this case, Pfus=0
-    "Psep": 1, # [W]    # serves only to compute lambda_q   # Psep = P_SOL * (1-f_rad)
-    "M_ion": 2,# 2.72,  # [amu]     
-    "p_sep": 3.38e3,  # [Pa]
-    "WthCQ": 23e6*1.1,  # [W]  
-    "longCQtime": 100.,  # [ms]      # Not relevant: this is a mitigated case
-    "Zeff": 1,
-    "betap": 1,
-    "Tsep": 1, # [eV]     # only useful for VS
-    "Tcore": 1, # [eV]    # completely useless
-    "tauW": 0.005, # [s]
-    #
-    # OUTPUTS
-    #
-    "tauPreTQ" : np.zeros(8),
-    "tauTQ" : np.zeros(8),
-    "tauCQ" : np.zeros(8),
-    "WTQ_con1" : np.zeros(8),
-    "WTQ_con2" : np.zeros(8),
-    "WTQ_rad" : np.zeros(8),
-    "tvs_TQ_con1" : np.zeros(8),
-    "tvs_TQ_con2" : np.zeros(8),
-    "tvs_TQ_rad" : np.zeros(8),
-    "WthTQ2"   : np.zeros(8),
-    "WthTQrad" : np.zeros(8),
-    "WCQ_con"  : np.zeros(8),
-    "WCQ_rad"  : np.zeros(8),
-    "tvs_CQ_con" : np.zeros(8),
-    "tvs_CQ_rad" : np.zeros(8),
-    "Wpol_c"   : np.zeros(8),
-    "Wpol_r"   : np.zeros(8),
-    # Some external sources for the data:
-    # [1]   https://ukaeauk.sharepoint.com/:x:/r/sites/STEP_Plasma_B1_2/_layouts/15/Doc.aspx?sourcedoc=%7B21AB2BE7-165D-4F7F-9075-8F4793F4A7F7%7D&file=Concept_Plasma_Comparison.xlsx&action=default&mobileredirect=true&DefaultItemOpen=1
 }
 
 def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
@@ -219,6 +173,14 @@ def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
 
 def err(a,b): return abs(a-b)*2/(a+b)
 
+def ExternalInductance(a,R,k):
+    aa = lambda x: (1 + 1.81*x**0.5 + 2.05*x) * np.log(8/x) - (2 + 9.25*x**0.5 - 1.21*x)
+    bb = lambda x: (0.73*x**0.5) * (1 + 2*x**4 - 6*x**5 + 3.7*x**6)        
+    eps = a / R
+    L = mu0 * R * aa(eps)*(1-eps)/(1-eps+k*bb(eps)) 
+
+    return L
+
 def tauE(scenarioName, mode='L'):
     """
     tauE implements the models in https://iopscience.iop.org/article/10.1088/0029-5515/39/12/302 for the computation 
@@ -291,7 +253,8 @@ def tauCQlinmin(scenarioName, linexp="lin", mitigatedVDE=0, MDlikely=0, longCQ=0
     """
     SLstar = scenarioName["Csect"] * (
 #                np.log(scenarioName["B0"] * scenarioName["R0"] / scenarioName["a"]) + scenarioName["li3"] / 2 - 2)
-                np.log(8 * scenarioName["R0"] / scenarioName["a"]) + 0.5 / 2 - 2)
+#                np.log(8 * scenarioName["R0"] / scenarioName["a"]) + 0.5 / 2 - 2)
+                ExternalInductance(scenarioName["a"],scenarioName["R0"],scenarioName["kappa"])/(mu0*scenarioName["R0"]) + 0.5 / 2 )
     tauCQ = 0.7*SLstar
     if (mitigatedVDE): tauCQ = SLstar/2
     if (MDlikely): tauCQ = SLstar*1.4
@@ -489,7 +452,7 @@ def qmelt(time, material="W"):
 
     return (Tmelt-T0)*np.sqrt(np.pi*Cp*rho*k/time)/2  #[W / m2]
 
-def Wpol(scenarioName,li3_betap="li3",HCF=0.):
+def Wpol(scenarioName,li3_betap="li3"):
     """
         Predicts the poloidal magnetic energy using the tabulated value for either li(3) or beta poloidal.
 
@@ -507,6 +470,9 @@ def Wpol(scenarioName,li3_betap="li3",HCF=0.):
 
         beta_p = (2/3)*Wth / Wpol
 
+        Inputs:
+          - scenarioName:   scenario dictionary-type input for poloidal energy calculation
+          - li3_betap:      switch parameter to decide which formula is used, as illustrated above. Takes values "li3" or "betap".
     """
     if (li3_betap == "li3"):
         # return 1.1 * mu0 * (scenarioName["Ip"]*(1-HCF))**2 * scenarioName["R0"] * scenarioName["li3"] / 4. 
@@ -514,7 +480,7 @@ def Wpol(scenarioName,li3_betap="li3",HCF=0.):
     if (li3_betap == "betap"):
         return 2 * scenarioName["Wth"] / (3 * scenarioName["betap"]) * 1.1
 
-def Wcoupled(scenarioName,lin_exp=0,VDE=True):
+def Wcoupled(scenarioName,lin_exp=0,VDE=False):
     """
     Computes the coupled magnetic energy. Only induced currents by Ip drop are considered. 
     Induced currents coming from plasma motion are more scenario dependent and not considered to this point.
@@ -526,15 +492,11 @@ def Wcoupled(scenarioName,lin_exp=0,VDE=True):
         Outputs:
           - Wcoupled:          coupled magnetic energy during CQ
     """
-    # a = lambda x: (1 + 1.81*x**0.5 + 2.05*x) * np.log(8/x) - (2 + 9.25*x**0.5 - 1.21*x)
-    # b = lambda x: (0.73*x**0.5) * (1 + 2*x**4 - 6*x**5 + 3.7*x**6)        
-    # eps = scenarioName["a"] / scenarioName["R0"]
-    # L = mu0 * R_wall * a(eps)*(1-eps)/(1-eps+scenarioName["kappa"]*b(eps)) #( np.log(8*R_wall/a_wall) - 2 )
-
-    a_wall = scenarioName["a"] * (1+(scenarioName["kappa"]))/2
-    R_wall = scenarioName["R0"] 
-    k0= (4*a_wall*R_wall)**0.5 / (a_wall + R_wall)
-    L = mu0 * R_wall * ( np.log(8*R_wall/a_wall) - 2 )
+    L = ExternalInductance(a=scenarioName["a"]*1.1,R=scenarioName["R0"]*1.1,k=scenarioName["kappa"])
+    # a_wall = scenarioName["a"] * (1+(scenarioName["kappa"]))/2
+    # R_wall = scenarioName["R0"] 
+    # k0= (4*a_wall*R_wall)**0.5 / (a_wall + R_wall)
+    # L = mu0 * R_wall * ( np.log(8*R_wall/a_wall) - 2 )
     # M = mu0/(2*np.pi) * (a_wall + R_wall) * ((1-k0**2/2)*ellipk(k0)-ellipe(k0))
     M = L
     # M = 2 * 6e-7 * scenarioName["tauW"] / scenarioName["a"]
@@ -544,10 +506,28 @@ def Wcoupled(scenarioName,lin_exp=0,VDE=True):
         tauCQ = scenarioName["tauCQ"] * 0.6 / np.log(4) 
         Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / (scenarioName["tauCQ"]-scenarioName["tauW"]) * ( np.exp(-1) - np.exp(-scenarioName["tauCQ"]/scenarioName["tauW"]) ) )**2 / (2 * L)
 
-    if VDE:
-        Wcoupled += scenarioName["Ip"] * ( scenarioName["kappa"]*scenarioName["a"] / 6 )**2 * 2 * np.pi * scenarioName["R0"]
+    # if VDE:
+    #     Wcoupled += scenarioName["Ip"] * ( scenarioName["kappa"]*scenarioName["a"] / 10 )**2 * 2 * np.pi * scenarioName["R0"]
         
     return Wcoupled
+
+def SOL(scenarioName,Wcond,onDivertor=False):
+    λq      = scenarioName["lamEich"]#["lamGoldston"]#(scenarioName["lamEich"]*scenarioName["lamGoldston"])**0.5
+    grazing = np.sin(3*np.pi/180)
+    Rtarget = scenarioName["R0"] + scenarioName["a"]   
+    spreading = 1
+    f_target  = 1
+
+    Wcond_through_SOL = Wcond / (4 * np.pi * Rtarget * λq)
+
+    if onDivertor:
+        Wcond_through_SOL *= grazing / spreading * f_target 
+
+    # Wcond_through_SOL = Wcond
+    W_rad_from_SOL = Wcond - Wcond_through_SOL
+
+    # return ( Wcond_through_SOL , W_rad_from_SOL )
+    return (Wcond,0)
 
 def W_PFC(scenarioName,phase,peakingFactors=0):
     """
@@ -584,9 +564,9 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
 
-    def Wrad(time,t1,W_cond,EmaxSwet):
+    def Wrad(isVS,W_cond,EmaxSwet):
     # If time = tau1, still the VS effect must be neglected...
-        if (time > t1*1.05):
+        if isVS:
             W_rad = (W_cond-EmaxSwet) / 2
         else:
             W_rad = 1e-20
@@ -605,28 +585,37 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             # I compute radiation from VS without considering peaking factors: 
             # this way I should have a better approximation, since peaks should average out with troughs
             # --> Final radiation load is the sum of {VS radiation (ramp-up + ramp down)} & {plasma emitted * RPF}
-            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=tau*1, Wplasma=0.3*C_cond[i]*Wth, Swetted=Swet_cond[i], flagVSactive=True)
-            (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=tau*3, Wplasma=0.7*C_cond[i]*Wth, Swetted=Swet_cond[i], flagVSactive=True)
+            Wr1 = 0
+            Wr2 = 0
+            Wc1,Wr1 = SOL(scenarioName=scenarioName,Wcond=0.3*C_cond[i]*Wth)
+            Wc2,Wr2 = SOL(scenarioName=scenarioName,Wcond=0.7*C_cond[i]*Wth)
+
+            print("TQ: {i}) W_cond(1) = {Wc1:.2f};  W_cond(2) = {Wc2:.2f};".format(i=i,Wc1=Wc1,Wc2=Wc2))
+
+            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1, Swetted=Swet_cond[i], flagVSactive=True)
+            (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2, Swetted=Swet_cond[i], flagVSactive=True)
             scenarioName["tvs_TQ_con1"][i] = tvs_con1
             scenarioName["tvs_TQ_con2"][i] = tvs_con2
             scenarioName["isVSactive_con1"][i] = isVS_con1
             scenarioName["isVSactive_con2"][i] = isVS_con2
-            scenarioName["WTQ_rad"][i] = ( Wrad(time=tau*1, t1=tvs_con1, W_cond=0.3*C_cond[i]*Wth, EmaxSwet=Emax_con1*Swet_cond[i]) +
-                                            Wrad(time=tau*3, t1=tvs_con2, W_cond=0.7*C_cond[i]*Wth, EmaxSwet=Emax_con2*Swet_cond[i]) +
+            scenarioName["WTQ_rad"][i] = ( Wrad(scenarioName["isVSactive_con1"][i], W_cond=Wc1, EmaxSwet=Emax_con1*Swet_cond[i]) +
+                                            Wrad(scenarioName["isVSactive_con2"][i], W_cond=Wc2, EmaxSwet=Emax_con2*Swet_cond[i]) +
+                                            Wr1 + Wr2 +
                                             C_rad[i]*Wth*RPF[i])
             # After computing radiation I now compute conducted loads with VS, now considering peaking factors: 
             # asymmetries in the plasma column (e.g. nonaxisymmetric VDE) may cause nonaxisymmetric loads
-            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau*1, Wplasma=0.3*C_cond[i]*Wth*TPF[i], Swetted=Swet_cond[i])
-            (tvs_con2,Emax_con2) = Emax1(scenarioName, time=tau*3, Wplasma=0.7*C_cond[i]*Wth*TPF[i], Swetted=Swet_cond[i])
+            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1*TPF[i], Swetted=Swet_cond[i])
+            (tvs_con2,Emax_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2*TPF[i], Swetted=Swet_cond[i])
             scenarioName["WTQ_con1"][i]  = Emax_con1 * Swet_cond[i]
             scenarioName["WTQ_con2"][i]  = Emax_con2 * Swet_cond[i]
 
     if (phase=="CQ"): 
-        C_cond  = [ 1.0 , 1.0 , 1.0 , 0.7 , 1.0 , 0.7 , 0.2 , 0.2  ]
-        C_rad   = [ 0.0 , 0.0 , 0.0 , 0.3 , 0.0 , 0.3 , 0.8 , 0.8  ]
+        C_cond  = C_cond_CQ         # [ 1.0 , 1.0 , 1.0 , 0.7 , 1.0 , 0.7 , 0.2 , 0.2  ]
+        C_rad   = 1 - C_cond_CQ     # [ 0.0 , 0.0 , 0.0 , 0.3 , 0.0 , 0.3 , 0.8 , 0.8  ]
         HCF     = [0.075, 0.075, 0.12, 0.2, 0.12, 0.2 , 0.05, 0.1  ]                           # halo current fractions
         RPF     = np.pow(1.5**2,peakingFactors) * np.ones(8)                                   # Radiation peaking factor (TPF x PPF)
         TPF     = np.pow([ 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 1.0 , 1.0 ],peakingFactors)     # Conduction toroidal peaking factor 
+        VDEs    = [False, False, True, True, True, True, False, True]
         tau     = np.array([ tauCQlinmin(scenarioName,MDlikely=1)     , tauCQlinmin(scenarioName)                , 
                              tauCQlinmin(scenarioName)                , tauCQlinmin(scenarioName,longCQ=1)       ,
                              tauCQlinmin(scenarioName)                , tauCQlinmin(scenarioName,longCQ=1)       ,
@@ -637,19 +626,90 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             # I compute radiation from VS without considering peaking factors: 
             # this way I should have a better approximation, since peaks should average out with troughs
             # --> Final radiation load is the sum of {VS radiation} & {plasma emitted * RPF}
-            scenarioName["WlossCQ"][i]= Wpol(scenarioName,HCF=HCF[i]) - Wcoupled(scenarioName,lin_exp=1)[i]
-            (tvs_con1,Emax_con1,isVS) = Emax1(scenarioName, time=tau[i], Wplasma=C_cond[i]*scenarioName["WlossCQ"][i], 
+            Wr = 0
+            scenarioName["WthCQ"]     = Wpol(scenarioName)
+            scenarioName["WlossCQ"][i]= Wpol(scenarioName) - Wcoupled(scenarioName,lin_exp=1,VDE=VDEs[i])[i]
+            scenarioName["WcoupCQ"][i]= Wcoupled(scenarioName,lin_exp=1,VDE=VDEs[i])[i]
+            Wc,Wr = SOL(scenarioName=scenarioName, Wcond=C_cond[i]*scenarioName["WlossCQ"][i])
+
+            print("CQ: {i}) W_cond = {Wc:.2f}".format(i=i,Wc=Wc))
+
+            (tvs_con1,Emax_con1,isVS) = Emax1(scenarioName, time=tau[i], Wplasma=Wc, 
                                               Swetted=Swet_cond[i], flagVSactive=True)
             scenarioName["tvs_CQ_con"][i] = tvs_con1
             scenarioName["isVSactive_CQ"][i] = isVS
-            scenarioName["WCQ_rad"][i]  = ( Wrad(time=tau[i], t1=tvs_con1, W_cond=C_cond[i]*scenarioName["WlossCQ"][i], 
+            scenarioName["WCQ_rad"][i]  = ( Wrad(scenarioName["isVSactive_CQ"][i], W_cond=Wc, 
                                                  EmaxSwet=Emax_con1*Swet_cond[i]) +
+                                            Wr +
                                             C_rad[i]*scenarioName["WlossCQ"][i]*RPF[i])
             # After computing radiation I now compute conducted loads with VS, now considering peaking factors: 
             # asymmetries in the plasma column (e.g. nonaxisymmetric VDE) may cause nonaxisymmetric loads
-            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=C_cond[i]*scenarioName["WlossCQ"][i]*TPF[i], Swetted=Swet_cond[i])
+            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=Wc*TPF[i], Swetted=Swet_cond[i])
+            # (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=C_cond[i]*scenarioName["WlossCQ"][i]*TPF[i], Swetted=Swet_cond[i])
             scenarioName["WCQ_con"][i] = Emax_con1 * Swet_cond[i]
             
+def RMSE(scenarioName):
+    A = deepcopy(SCENARIO)
+
+    dC_cond_CQ          = 0.2
+
+    A["name"]           = "ErrorBars_"+scenarioName["name"]
+
+    A["R0"]             = 0
+    A["a"]              = 0
+    A["kappa"]          = 0
+    A["delta"]          = 0
+    A["Volume"]         = 0
+    A["Csect"]          = 0
+    A["B0"]             = 0
+    A["Ip"]             = 0
+    A["q95"]            = 0
+    A["li3"]            = 0
+    A["ne"]             = 0
+    A["Tsep"]           = 0
+    A["Tcore"]          = 0
+    A["p_sep"]          = 0
+    A["betap"]          = 0
+    A["Wth"]            = 0
+    A["P_SOL"]          = 0
+    A["Psep"]           = 0
+    A["M_ion"]          = 0
+    A["Zeff"]           = 0
+    A["tauW"]           = 0
+    A["S_FW"]           = 0
+    A["S_div"]          = 0
+    A["S_cp"]           = 0
+    A["longCQtime"]     = 0.3
+    A["WthCQ"]          = 0.1
+    for i in range(len(scenarioName["tauTQ"])):
+        A["tauPreTQ"][i]    = [0.16,0,0,0,0,0,0.3,0.3][i]
+        A["tauTQ"][i]       = 0.3
+        A["WTQ_con1"][i]    = 0.2
+        A["WTQ_con2"][i]    = 0.2
+        A["WTQ_rad"][i]     = 0.2
+        A["tvs_TQ_con1"][i] = 0.0
+        A["tvs_TQ_con2"][i] = 0.0
+        A["tvs_TQ_rad"][i]  = 0.0
+        A["tauCQ"][i]       = 0.3
+        A["WcoupCQ"][i]     = 0.1
+        A["WlossCQ"][i]     = ( (scenarioName["WthCQ"]*A["WthCQ"])**2 
+                               + (scenarioName["WcoupCQ"][i]*A["WcoupCQ"][i])**2 )**0.5 / abs(scenarioName["WlossCQ"][i])
+
+        A["WCQ_con"][i]     = ( scenarioName["WlossCQ"][i]**2 * dC_cond_CQ**2    
+                                + C_cond_CQ[i]**2 * scenarioName["WlossCQ"][i]**2 * A["WlossCQ"][i]**2 
+                               )**0.5 / abs(scenarioName["WCQ_con"][i])
+
+        A["WCQ_rad"][i]     = A["WCQ_con"][i] * abs( scenarioName["WCQ_con"][i] / scenarioName["WCQ_rad"][i] )
+
+        # If the denominator of some fraction is close to zero...
+        if A["WlossCQ"][i] > 1:
+            A["WlossCQ"][i] = 0
+        if A["WCQ_con"][i] > 1:
+            A["WCQ_con"][i] = 0
+        if A["WCQ_rad"][i] > 1:
+            A["WCQ_rad"][i] = 0
+
+    return A
 
 def Predictions(scenarioName,additional_output_txt=False):
     """
@@ -826,7 +886,7 @@ def Predictions(scenarioName,additional_output_txt=False):
     if additional_output_txt:
         WthCQ = np.ones(8)
         for i in range(8): 
-            WthCQ[i] = Wpol(scenarioName,HCF=HCF[i])
+            WthCQ[i] = Wpol(scenarioName)
 
         with open(f"{scenarioName['name']}_DisruptionsPredictions.txt", 'a', encoding='utf-8') as f:    
             f.write("\n___\nCQ:\n")
@@ -907,433 +967,352 @@ def Predictions(scenarioName,additional_output_txt=False):
 
         f.close()
 
-def scenarioCloud(reference,colArray=['BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM'],filename='FrancisSpreadsheet.xlsx',modeHL='L'):
-    """
-    Produces a dependance plot that contains the mutual correlations among data
-        Input:
-            - colArray :    array of column names on the Francis's spreadsheet. 
-            - filename :    name of the Excel file used to pick the inputs from.
-            - modeHL:       'H' --> H-mode scaling for tauE;  'L' --> L-mode scaling (default)
-
-    """
-    tE_vec   = np.zeros(len(colArray))
-    t2_vec   = np.zeros(len(colArray))
-    tCQ_vec  = np.zeros(len(colArray))
-    lQ_vec   = np.zeros(len(colArray))
-    lEich    = np.zeros(len(colArray))
-    Wpol_vec = np.zeros(len(colArray))
-    Wth_vec  = np.zeros(len(colArray))
-    dWpol_vec= np.zeros(len(colArray))
-    i = 0
-
-    namesArray = colArray
-
-    if (filename=="FrancisSpreadsheet_new1.xlsx"):  namesArray = ["68/A","68/B","69/A","69/B","70"]
-
-    for col in colArray :
-        scenario = readFromXls(col,scenarioLabel=namesArray[i],filename=filename) 
-
-    #    tE_vec[i]   = tauE(scenario)
-        tE_vec[i]   = tauE(scenarioName=scenario,mode=modeHL)
-        t2_vec[i]   = DTcool(scenario)*1e3
-        tCQ_vec[i]  = tauCQlinmin(scenario)*1e3
-        lQ_vec[i]   = lambdaMHD(scenario)*1e3
-        lEich[i]    = lambdaEich(scenario)*1e3
-        Wth_vec[i]  = scenario["Wth"]*1e-6
-        Wpol_vec[i] = Wpol(scenario,li3_betap="li3",HCF=0)/1e6        # HCF=0  --> W_{pol,vv}
-        dWpol_vec[i]= 0.1*Wpol_vec[i]
-        i += 1
-
-    def errorBar(subplot,x,y,dy,colour):
-        subplot.plot([x,x],[y-dy,y+dy],color=colour,linewidth=0.3)
-        # subplot.plot([x-0.3,x+0.3],[y+dy,y+dy],color=colour)
-        # subplot.plot([x-0.3,x+0.3],[y-dy,y-dy],color=colour)
-
-    import matplotlib.pyplot as plt
-
-    fig, axs = plt.subplots(3, 2, figsize=(9, 9))
-
-    scen = ' '
-    #if (( col(colArray[0]) > col('AG') ) and ( col(colArray[-1] < col('BD') ))) :
-    #    scen=' of SPR045 '
-    #    reference=SPR045
-    #if (( col(colArray[0]) > col('BC') ) and ( col(colArray[-1] < col('BK') ))) :
-    scen=' of SPP-2 '
-    # if (( col(colArray[0]) > col('BC') ) and ( col(colArray[-1] < col('BQ') ))) :
-    #     scen=' of SPR068 and SPR069 '
-    #     reference=SPR068
-    fig.suptitle('Variability'+scen+'derived quantities on different scenarios',fontsize=14)
-
-    if (modeHL=='H'):
-        plot1_title = r'$\tau^{*}_{E,98(y,2)}$ [s]'
-
-    if (modeHL=='L'):
-        plot1_title = r'$\tau_{ITERL 96}$ [s]'
-
-    for i in range(len(colArray)): errorBar(axs[0,0],namesArray[i],tE_vec[i],0.16*tE_vec[i],colour='grey')
-    axs[0,0].plot(namesArray,tE_vec,'o',color='grey',label='scenarios')
-    axs[0,0].set_title(plot1_title)   
-    axs[0,0].plot(namesArray[np.abs(tE_vec-tE_vec.max()).argmin()],tE_vec.max(),'o',color='blue',label='max / min')
-    axs[0,0].plot(namesArray[np.abs(tE_vec-tE_vec.min()).argmin()],tE_vec.min(),'o',color='blue')
-    #axs[0,0].plot(colArray[np.abs(tE_vec-tauE(reference)).argmin()],tauE(reference),"o",color='red')
-    axs[0,0].axhline(y=tauE(reference,mode=modeHL),color='red',linestyle='--',label='reference setup')
-    xlimits = [-0.5,len(namesArray)-0.5]#axs[0,0].get_xlim()
-    axs[0,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
-    axs[0,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
-    axs[0,0].set_xlim(xlimits)
-    ylimits = axs[0,0].get_ylim()
-    axs[0,0].set_ylim([ylimits[0],ylimits[1]*1.34])
-
-    axs[0,0].legend()
-
-    #-----------------------------------------------------------------------------------------------------------------------------------------
-
-    for i in range(len(colArray)): errorBar(axs[0,1],namesArray[i],t2_vec[i],0.3*t2_vec[i],colour='grey')
-    axs[0,1].plot(namesArray,t2_vec,'o',color='grey')
-    axs[0,1].set_title(r'$\Delta{t}_{cool}$ [ms]')   
-    axs[0,1].plot(namesArray[np.abs(t2_vec-t2_vec.max()).argmin()],t2_vec.max(),'o',color='blue')
-    axs[0,1].plot(namesArray[np.abs(t2_vec-t2_vec.min()).argmin()],t2_vec.min(),'o',color='blue')
-    #axs[0,1].plot(colArray[np.abs(t2_vec-DTcool(reference)).argmin()],DTcool(reference),"o",color='red')
-    axs[0,1].axhline(y=DTcool(reference),color='red',linestyle='--')
-    axs[0,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
-    axs[0,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
-    axs[0,1].set_xlim(xlimits)
-
-    #-----------------------------------------------------------------------------------------------------------------------------------------
-
-    for i in range(len(namesArray)):  errorBar(axs[1,0],namesArray[i],tCQ_vec[i],0.3*tCQ_vec[i],colour='grey')
-    axs[1,0].plot(namesArray,tCQ_vec,'o',color='grey')
-    axs[1,0].set_title(r'$\tau_{CQ}^{lin}$ [ms]')   
-    axs[1,0].plot(namesArray[np.abs(tCQ_vec-tCQ_vec.max()).argmin()],tCQ_vec.max(),'o',color='blue')
-    axs[1,0].plot(namesArray[np.abs(tCQ_vec-tCQ_vec.min()).argmin()],tCQ_vec.min(),'o',color='blue')
-    #axs[1,0].plot(colArray[np.abs(lQ_vec-lambdaMHD_rough(reference)*1e3).argmin()],lambdaMHD_rough(reference)*1e3,"o",color='red')
-    axs[1,0].axhline(y=tauCQlinmin(reference),color='red',linestyle='--')
-    axs[1,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
-    axs[1,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
-    axs[1,0].set_xlim(xlimits)
-
-    #-----------------------------------------------------------------------------------------------------------------------------------------
-
-    for i in range(len(colArray)): 
-        axs[1,1].plot([namesArray[i],namesArray[i]],[lEich[i],lQ_vec[i]],color='grey',linewidth=0.3)
-    axs[1,1].plot(namesArray,(lQ_vec+lEich)/2,'o',color='grey')
-    axs[1,1].set_title(r'$\lambda_{q}$ [mm]')   
-    axs[1,1].plot(namesArray[np.abs((lQ_vec+lEich)/2-(lQ_vec.max()+lEich.max())/2).argmin()],(lQ_vec.max()+lEich.max())/2,'o',color='blue')
-    axs[1,1].plot(namesArray[np.abs((lQ_vec+lEich)/2-(lQ_vec.min()+lEich.min())/2).argmin()],(lQ_vec.min()+lEich.min())/2,'o',color='blue')
-    #axs[1,0].plot(colArray[np.abs(lQ_vec-lambdaMHD_rough(reference)*1e3).argmin()],lambdaMHD_rough(reference)*1e3,"o",color='red')
-    axs[1,1].axhline(y=(lambdaMHD(reference)+lambdaEich(reference))*5e2,color='red',linestyle='--')
-    axs[1,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
-    axs[1,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
-    axs[1,1].set_xlim(xlimits)
-
-    #-----------------------------------------------------------------------------------------------------------------------------------------
-
-    for i in range(len(colArray)): errorBar(axs[2,0],namesArray[i],Wpol_vec[i],dWpol_vec[i],colour='grey')
-    axs[2,0].plot(namesArray,Wpol_vec,'o',color='grey')
-    #axs[2,0].set_title(r'$W_{pol,vv} = 1.1 \times W_{pol}$ [MW]',fontsize=12)   
-    axs[2,0].set_title(r'$W_{pol,vv} = W_{CQ} \, /\, (1-HCF)^2$ [MW]',fontsize=12)   
-    axs[2,0].plot(namesArray[np.abs(Wpol_vec-Wpol_vec.max()).argmin()],Wpol_vec.max(),'o',color='blue')
-    axs[2,0].plot(namesArray[np.abs(Wpol_vec-Wpol_vec.min()).argmin()],Wpol_vec.min(),'o',color='blue')
-    # axs[1,1].plot(colArray[np.abs(Wpol_vec-Wth(reference)*1e-6).argmin()],Wth(reference)*1e-6,"o",color='red')
-    axs[2,0].axhline( y=Wpol(reference,li3_betap="li3")/1e6 ,  color='red' , linestyle='--')
-    axs[2,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
-    axs[2,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
-    axs[2,0].set_xlim(xlimits)
-
-    #-----------------------------------------------------------------------------------------------------------------------------------------
-
-    axs[2,1].plot(namesArray,Wth_vec,'o',color='grey')
-    axs[2,1].set_title(r'$W_{th}$ [MW]',fontsize=12)   
-    axs[2,1].plot(namesArray[np.abs(Wth_vec-Wth_vec.max()).argmin()],Wth_vec.max(),'o',color='blue')
-    axs[2,1].plot(namesArray[np.abs(Wth_vec-Wth_vec.min()).argmin()],Wth_vec.min(),'o',color='blue')
-    # axs[1,1].plot(colArray[np.abs(Wpol_vec-Wth(reference)*1e-6).argmin()],Wth(reference)*1e-6,"o",color='red')
-    axs[2,1].axhline( y=reference["Wth"]/1e6 ,  color='red' , linestyle='--')
-    axs[2,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
-    axs[2,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
-    axs[2,1].set_xlim(xlimits)
-
-    plt.subplots_adjust(hspace=0.5)
-    #plt.tight_layout()
-    plt.show()
-
-def Melt1plot(scenario,SPR="SPR-69/B",PF=1):
-    """
-    Produces the plot showing ratio of the incoming conducted & radiated loads during TQ and CQ to the critical melting value, for the various
-    disruption types considered in the study.
-
-    Requires that you have already called the function "Predictions" on the same scenario
-
-        Input:
-          - scenario:   name of a python library-type scenario
-          - SPR:        string type input corresponding to the scenario name (goes in the title of the figure) 
-          - PF:         0 --> not considering peaking factors;   1 --> considering peaking factors 
-    """
-    qcritTQ1 = qmelt(scenario["tauTQ"])
-    qcritTQ2 = qmelt(scenario["tauTQ"]*3)
-    qcritTQr = qmelt(scenario["tauTQ"]*4)
-    qcritCQ  = qmelt(scenario["tauCQ"])
-
-    Sdiv = scenario["S_div"]
-    S_FW = scenario["S_FW"]
-    Scp = scenario["S_cp"]
-
-    disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
-    Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
-    # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
-    Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
-
-    W_PFC(scenarioName=scenario,phase="TQ",peakingFactors=PF)
-    W_PFC(scenarioName=scenario,phase="CQ",peakingFactors=PF)
-
-    import matplotlib.pyplot as plt
-
-    fig, axs = plt.subplots(1, 2, figsize=(15,5.5))
-
-    fig.suptitle("Melting limit for tungsten ("+SPR+")",fontsize=18)
-
-    ylimits = (1e-3,1e2)
-    axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond) / qcritTQ1 , color='red'  , linewidth=1 ) # , label="ramp-up phase" )
-    axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond) / qcritTQ2 , color='red'  , linewidth=1 , linestyle='--' ) # , label="ramp-down phase" )
-    axs[0].semilogy(disruptions, scenario["WTQ_rad"]/(scenario["tauTQ"]*4*Swet_rad)  / qcritTQr , color='blue' , linewidth=1 )
-    axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond) / qcritTQ1 , 'o'          , color='red'  , label="conducted" )
-    axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond) / qcritTQ2 , 'o'          , color='red' )
-    axs[0].semilogy(disruptions, scenario["WTQ_rad"]/(scenario["tauTQ"]*4*Swet_rad)  / qcritTQr , 'o'          , color='blue' , label="radiated"  )
-    limits = axs[0].get_xlim()
-    axs[0].semilogy([-1,10]    ,   np.ones(2)                                                        , color='black', linestyle=':' )
-    axs[0].set_ylim(ylimits)
-    axs[0].set_xlim(limits)
-    axs[0].set_title("Thermal Quench",fontsize=16)
-    axs[0].set_ylabel(r"$q_{wall}$ / $q_{melt}$",fontsize=16)
-    axs[0].axhspan(1e0,1e10,color='black',alpha=0.1 , label="wall melting" )
-    axs[0].axhspan(1e-10,1e0,color='cyan',alpha=0.1 , label="not melting" )
-    axs[0].text(0,1.5,"melting",color='black',fontsize=12)
-    axs[0].text(0,5e-1,"not melting",color='black',fontsize=12)
-    # axs[0].text(6.7,35,"ramp\ndown",color='red',fontsize=10)
-    # axs[0].text(6.3,2e5,"ramp\nup",color='red',fontsize=10)
-    axs[0].semilogy([6,6.5],[450e-1,450e-1],color='red')
-    axs[0].semilogy([6,6.5],[150e-1,150e-1],color='red',linestyle='--')
-    axs[0].text(6.7,350e-1,"ramp\nup",color='red',fontsize=10)
-    axs[0].text(6.7,100e-1,"ramp\ndown",color='red',fontsize=10)
-    axs[0].legend(loc='upper left',fontsize=12)
-
-    axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond) / qcritCQ   , color='red'  , linewidth=1   )
-    axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ   , color='blue' , linewidth=1   )
-    axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond) / qcritCQ   , 'o'          , color='red'   )
-    axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ   , 'o'          , color='blue'  )
-    axs[1].semilogy([-1,10]    , np.ones(2)                                                     , color='black', linestyle=':' )
-    axs[1].set_ylim(ylimits)
-    axs[1].set_xlim(limits)
-    axs[1].set_title("Current Quench",fontsize=16)
-    axs[1].axhspan(1e0,1e10,color='black',alpha=0.1)
-    axs[1].axhspan(1e-10,1e0,color='cyan',alpha=0.1 )
-    axs[1].text(0,1.5,"melting",color='black',fontsize=12)
-    axs[1].text(0,5e-1,"not melting",color='black',fontsize=12)
-    #axs[1].set_ylabel(r"$q_{wall} / q_{melt}$")
-
-    plt.show()
-
-def Melt2plot(scenario,SPR="SPR-69/B",PF=1):
-    """
-    Produces the plot showing surface temperature increases during TQ and CQ, owing to conduction and radiation, for the various
-    disruption types considered in the study.
-
-    Requires that you have already called the function "Predictions" on the same scenario
-
-        Input:
-          - scenario:   name of a python library-type scenario
-          - SPR:        string type input corresponding to the scenario name (goes in the title of the figure)  
-          - PF:         0 --> not considering peaking factors;   1 --> considering peaking factors 
-    """
-
-    def Tfinal(q0,time):
-        Cp    = 130    # [J / kg K]
-        k     = 170    # [W / m K]
-        rho   = 19250  # [kg / m3]
-        T0    = 550 + 273.15
-
-        return 2 * q0 * np.sqrt( time / (rho * Cp * k * np.pi) ) #+ T0
-
-    T0    = 550 + 273.15
-    Tmelt = 3695 - T0 # [K]
-    Tvap  = 6203 - T0 # [K]
-
-    Sdiv = scenario["S_div"]
-    S_FW = scenario["S_FW"]
-    Scp = scenario["S_cp"]
-
-    disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
-    Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
-    # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
-    Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
-
-    TTQcon1 = np.zeros(8)
-    TTQcon2 = np.zeros(8)
-    TTQrad  = np.zeros(8)
-    TCQcon  = np.zeros(8)
-    TCQrad  = np.zeros(8)
-
-    W_PFC(scenarioName=scenario,phase="TQ",peakingFactors=PF)
-    W_PFC(scenarioName=scenario,phase="CQ",peakingFactors=PF)
-
-    t_TQ = scenario["tauTQ"][0]
-    for jj in range(8):
-        TTQcon1[jj] = Tfinal( time=t_TQ , q0=scenario["WTQ_con1"][jj]/(t_TQ*Swet_cond[jj]) )
-        if (TTQcon1[jj] >= Tvap): TTQcon1[jj] = Tvap
-        if (t_TQ >= scenario["tvs_TQ_con1"][jj]): TTQcon1[jj] = Tvap   
-
-        TTQcon2[jj] = Tfinal( time=t_TQ*3 , q0=scenario["WTQ_con2"][jj]/(t_TQ*3*Swet_cond[jj]) ) #+ TTQcon1[jj]
-        if (TTQcon2[jj] >= Tvap): TTQcon2[jj] = Tvap
-        if (t_TQ*3 >= scenario["tvs_TQ_con2"][jj]): TTQcon2[jj] = Tvap
-
-        TTQrad[jj] = Tfinal( time=t_TQ*4 , q0=scenario["WTQ_rad"][jj]/(t_TQ*4*Swet_rad[jj]) )
-        if (TTQrad[jj] >= Tvap): TTQrad[jj] = Tvap
-
-        TCQcon[jj] = Tfinal( time=scenario["tauCQ"][jj] , q0=scenario["WCQ_con"][jj]/(scenario["tauCQ"][jj]*Swet_cond[jj]) )
-        if (TCQcon[jj] >= Tvap): TCQcon[jj] = Tvap
-        #if (scenario["tauCQ"][jj] >= scenario["tvs_CQ_con"][jj]): TCQcon[jj] = Tvap
-
-        TCQrad[jj] = Tfinal( time=scenario["tauCQ"][jj] , q0=scenario["WCQ_rad"][jj]/(scenario["tauCQ"][jj]*Swet_rad[jj]) )
-        if (TCQrad[jj] >= Tvap): TCQrad[jj] = Tvap
-
-
-    import matplotlib.pyplot as plt
-
-    fig, axs = plt.subplots(1, 2, figsize=(15,5.5))
-
-    fig.suptitle("Tungsten wall temperature raise ("+SPR+")",fontsize=18)
-
-    ylimits = (3e0,3e4)
-    axs[0].semilogy(disruptions,   TTQcon1   , color='red'  , linewidth=1 )# , label="ramp-up phase" )
-    axs[0].semilogy(disruptions,   TTQcon2   , color='red'  , linewidth=1 , linestyle='--' ) # , label="ramp-down phase" )
-    axs[0].semilogy(disruptions[0:8],   TTQrad[0:8]    , color='blue' , linewidth=1 )
-    axs[0].semilogy(disruptions,   TTQcon1   , 'o'          , color='red'  , label="conducted" )
-    axs[0].semilogy(disruptions,   TTQcon2   , 'o'          , color='red' )
-    axs[0].semilogy(disruptions,   TTQrad    , 'o'          , color='blue' , label="radiated"  )
-    limits = axs[0].get_xlim()
-    axs[0].semilogy([-1,10]    ,   np.ones(2)*Tmelt         , color='black', linestyle=':' )
-    axs[0].semilogy([-1,10]    ,   np.ones(2)*Tvap          , color='black', linestyle=':' )
-    axs[0].set_ylim(ylimits)
-    axs[0].set_xlim(limits)
-    axs[0].set_title("Thermal Quench",fontsize=16)
-    axs[0].set_ylabel(r"$\Delta T_{wall}$ / $k_B$ [K]",fontsize=16)
-    axs[0].axhspan(Tvap , 1e10 , color='red'   ,alpha=0.1 , label="vaporised wall" )
-    axs[0].axhspan(Tmelt, Tvap , color='orange',alpha=0.1 , label="molten wall" )
-    axs[0].axhspan(0    , Tmelt, color='cyan'  ,alpha=0.1 , label="solid wall" )
-    axs[0].semilogy([6,6.5],[25e0,25e0],color='red')
-    axs[0].semilogy([6,6.5],[8e0,8e0],color='red',linestyle='--')
-    axs[0].text(6.7,5e0,"ramp\ndown",color='red',fontsize=10)
-    axs[0].text(6.7,18e0,"ramp\nup",color='red',fontsize=10)
-    # axs[0].text(6.7,35,"ramp\ndown",color='red',fontsize=10)
-    # axs[0].text(6.3,2e5,"ramp\nup",color='red',fontsize=10)
-    #axs[0].plot([6,6.5],[550,550],color='red')
-    #axs[0].plot([6,6.5],[250,250],color='red',linestyle='--')
-    #axs[0].text(6.7,180,"ramp\ndown",color='red',fontsize=10)
-    #axs[0].text(6.7,450,"ramp\nup",color='red',fontsize=10)
-    #axs[0].legend(loc='lower left',fontsize=12)
-
-    axs[1].semilogy(disruptions,   TCQcon   , color='red'  , linewidth=1   )
-    axs[1].semilogy(disruptions,   TCQrad   , color='blue' , linewidth=1   )
-    axs[1].semilogy(disruptions,   TCQcon   , 'o'          , color='red'   , label="conducted" )
-    axs[1].semilogy(disruptions,   TCQrad   , 'o'          , color='blue'  , label="radiated" )
-    axs[1].semilogy([-1,10]    ,   np.ones(2)*Tmelt        , color='black', linestyle=':' )
-    axs[1].semilogy([-1,10]    ,   np.ones(2)*Tvap         , color='black', linestyle=':' )
-    axs[1].text(-.1,Tmelt*0.65,"melting point",color='black',fontsize=12)
-    axs[1].text(-.1,Tvap *1.20,"vapour point",color='black',fontsize=12)
-    axs[1].set_ylim(ylimits)
-    axs[1].set_xlim(limits)
-    axs[1].set_title("Current Quench",fontsize=16)
-    axs[1].axhspan(Tvap , 1e10 , color='red'   , alpha=0.1 , label="vaporised wall" )
-    axs[1].axhspan(Tmelt, Tvap , color='orange', alpha=0.1 , label="molten wall" )
-    axs[1].axhspan(0    , Tmelt, color='cyan'  , alpha=0.1 , label="solid wall" )
-    #axs[1].text(0,1.5,"melting",color='black',fontsize=12)
-    #axs[1].text(0,5e-1,"not melting",color='black',fontsize=12)
-    #axs[1].set_ylabel(r"$q_{wall} / q_{melt}$")
-    axs[0].legend(loc='lower left',fontsize=12)
-
-    plt.show()
-
-    return TCQrad
-
-def JETscenarios(shot=96867):
-    scenario = JET96867.copy()
-
-    if (shot==1):
-        scenario["name"]  = "JET_1.2MA_mitigatedVDE"
-        scenario["B0"]    = 1.15
-        Wmag              = 3.2e6 
-        scenario["P_SOL"] = 0
-        scenario["Wth"]   = 0.5e6
-        scenario["Ip"]    = 1.2e6
-        scenario["q95"]   = 3.2
-        scenario["li3"]   = Wmag * 4 / (1.1 * mu0 * scenario["R0"] * scenario["Ip"]**2)
-    elif (shot==2):
-        scenario["name"]  = "JET_2.5MA_mitigatedVDE"
-        scenario["B0"]    = 2.5
-        Wmag              = 16e6 
-        scenario["P_SOL"] = 15e6 + 2e6
-        scenario["Wth"]   = 4.1e6
-        scenario["Ip"]    = 2.5e6
-        scenario["q95"]   = 3.12
-        scenario["li3"]   = Wmag * 4 / (1.1 * mu0 * scenario["R0"] * scenario["Ip"]**2)
-
-    return scenario
-
-def validation(number=0) :
-    scenario = JETscenarios(number)
-
-    def f(a,x):
-        """
-        Integral of Btor on an ellypse: (x/a)**2 + (y/ka)**2 = 1
-        """
-        S = (a**2-x**2)
-        return -(S + x * np.arctan(x/S)) / x
-    
-    # Wtor     = ( scenario["B0"] * scenario["R0"] )**2 / (2 * mu0) * (
-    #                                     f(scenario["a"],scenario["R0"]+scenario["a"]) - f(scenario["a"],scenario["R0"]-scenario["a"]) )
-    #Wtor     = 0
-
-    tau_cool   = DTcool(scenarioName=scenario) + tauTQ(scenarioName=scenario)
-    tau_CQ_min = tauCQlinmin(scenarioName=scenario,mitigatedVDE=1)
-    tau_CQ_ave = tauCQlinmin(scenarioName=scenario,mitigatedVDE=1,longCQ=1)
-    qcrit_Be   = qmelt(tauTQ(scenarioName=scenario),material="Be")
-    qcrit_W    = qmelt(tauTQ(scenarioName=scenario),material="W")
-    qcrit_Be_CQ= qmelt(tau_CQ_ave,material="Be")
-    qcrit_W_CQ = qmelt(tau_CQ_ave,material="W")
-
-    scenario["tauCQ"] = tau_CQ_ave
-
-    Wrad       = scenario["Wth"] * (0.2 + 0.8**2) + (Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=0))*0.8
-
-    print("Ip [MA]:          ",scenario["Ip"]/1e6)
-    print("tau[preTQ]+tau1:  ",tau_cool,"            [min,max]=[",0.7*tau_cool,",",1.3*tau_cool,"]")
-    print("tau[CQ] min.:     ",tau_CQ_min,"          [min,max]=["          ,0.7*tau_CQ_min,",",1.3*tau_CQ_min,"]")
-    print("tau[CQ] long:     ",tau_CQ_ave,"          [min,max]=["          ,0.7*tau_CQ_ave,",",1.3*tau_CQ_ave,"]")
-    print("Wrad [MJ]:        ",Wrad/1e6,"             [min,max]=[",0.78e-6*Wrad,",",1.22e-6*Wrad,"]")
-    print("qmelt TQ [MW/m2]: ",qcrit_Be/1e6," with Berillium (walls)")
-    print("qmelt TQ [MW/m2]: ",qcrit_W/1e6," with Tungsten (divertor)")
-    print("qmelt CQ [MW/m2]: ",qcrit_Be_CQ/1e6," with Berillium (walls)")
-    print("qmelt CQ [MW/m2]: ",qcrit_W_CQ/1e6," with Tungsten (divertor)")
-    print("---------------------------------------------------------------")
-    print("W_TQ conduct. [MJ] ",scenario["Wth"]*0.8*0.2e-6)
-    print("tauTQ [ms]:        ",tauTQ(scenario)*1e3)
-    print("S_limiter [m2] ~   ",4)
-    print("q_plasma [MW/m2]   ",0.2*0.8*scenario["Wth"]/(4*tauTQ(scenario))/1e6)
-    print("---------------------------------------------------------------")
-    print("W_CQ conduct. [MJ] ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.2e-6)
-    print("tauCQ [ms]:        ",tau_CQ_ave*1e3)
-    print("S_limiter [m2] ~   ",4)
-    print("q_plasma [MW/m2]   ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.2/(4*tau_CQ_ave)/1e6)
-    print("---------------------------------------------------------------")
-    print("W_TQ rad [MJ]      ",scenario["Wth"] * 0.8**2 / 1e6)
-    print("tauCQ [ms]:        ",tauTQ(scenario)*1e3)
-    print("S_PFC [m2] ~       ",240)
-    print("q_plasma [MW/m2]   ",scenario["Wth"] * 0.8**2/(240*tauTQ(scenario))/1e6)
-    print("---------------------------------------------------------------")
-    print("W_CQ rad [MJ]      ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.8e-6)
-    print("tauCQ [ms]:        ",tau_CQ_ave*1e3)
-    print("S_PFC [m2] ~       ",240)
-    print("q_plasma [MW/m2]   ",(Wpol(scenarioName=scenario)-Wcoupled(scenarioName=scenario,lin_exp=1))*0.8/(240*tau_CQ_ave)/1e6)
-    
+# def scenarioCloud(reference,colArray=['BD','BE','BF','BG','BH','BI','BJ','BK','BL','BM'],filename='FrancisSpreadsheet.xlsx',modeHL='L'):
+#     """
+#     Produces a dependance plot that contains the mutual correlations among data
+#         Input:
+#             - colArray :    array of column names on the Francis's spreadsheet. 
+#             - filename :    name of the Excel file used to pick the inputs from.
+#             - modeHL:       'H' --> H-mode scaling for tauE;  'L' --> L-mode scaling (default)
+
+#     """
+#     tE_vec   = np.zeros(len(colArray))
+#     t2_vec   = np.zeros(len(colArray))
+#     tCQ_vec  = np.zeros(len(colArray))
+#     lQ_vec   = np.zeros(len(colArray))
+#     lEich    = np.zeros(len(colArray))
+#     Wpol_vec = np.zeros(len(colArray))
+#     Wth_vec  = np.zeros(len(colArray))
+#     dWpol_vec= np.zeros(len(colArray))
+#     i = 0
+
+#     namesArray = colArray
+
+#     if (filename=="FrancisSpreadsheet_new1.xlsx"):  namesArray = ["68/A","68/B","69/A","69/B","70"]
+
+#     for col in colArray :
+#         scenario = readFromXls(col,scenarioLabel=namesArray[i],filename=filename) 
+
+#     #    tE_vec[i]   = tauE(scenario)
+#         tE_vec[i]   = tauE(scenarioName=scenario,mode=modeHL)
+#         t2_vec[i]   = DTcool(scenario)*1e3
+#         tCQ_vec[i]  = tauCQlinmin(scenario)*1e3
+#         lQ_vec[i]   = lambdaMHD(scenario)*1e3
+#         lEich[i]    = lambdaEich(scenario)*1e3
+#         Wth_vec[i]  = scenario["Wth"]*1e-6
+#         Wpol_vec[i] = Wpol(scenario,li3_betap="li3")/1e6        # HCF=0  --> W_{pol,vv}
+#         dWpol_vec[i]= 0.1*Wpol_vec[i]
+#         i += 1
+
+#     def errorBar(subplot,x,y,dy,colour):
+#         subplot.plot([x,x],[y-dy,y+dy],color=colour,linewidth=0.3)
+#         # subplot.plot([x-0.3,x+0.3],[y+dy,y+dy],color=colour)
+#         # subplot.plot([x-0.3,x+0.3],[y-dy,y-dy],color=colour)
+
+#     import matplotlib.pyplot as plt
+
+#     fig, axs = plt.subplots(3, 2, figsize=(9, 9))
+
+#     scen = ' '
+#     #if (( col(colArray[0]) > col('AG') ) and ( col(colArray[-1] < col('BD') ))) :
+#     #    scen=' of SPR045 '
+#     #    reference=SPR045
+#     #if (( col(colArray[0]) > col('BC') ) and ( col(colArray[-1] < col('BK') ))) :
+#     scen=' of SPP-2 '
+#     # if (( col(colArray[0]) > col('BC') ) and ( col(colArray[-1] < col('BQ') ))) :
+#     #     scen=' of SPR068 and SPR069 '
+#     #     reference=SPR068
+#     fig.suptitle('Variability'+scen+'derived quantities on different scenarios',fontsize=14)
+
+#     if (modeHL=='H'):
+#         plot1_title = r'$\tau^{*}_{E,98(y,2)}$ [s]'
+
+#     if (modeHL=='L'):
+#         plot1_title = r'$\tau_{ITERL 96}$ [s]'
+
+#     for i in range(len(colArray)): errorBar(axs[0,0],namesArray[i],tE_vec[i],0.16*tE_vec[i],colour='grey')
+#     axs[0,0].plot(namesArray,tE_vec,'o',color='grey',label='scenarios')
+#     axs[0,0].set_title(plot1_title)   
+#     axs[0,0].plot(namesArray[np.abs(tE_vec-tE_vec.max()).argmin()],tE_vec.max(),'o',color='blue',label='max / min')
+#     axs[0,0].plot(namesArray[np.abs(tE_vec-tE_vec.min()).argmin()],tE_vec.min(),'o',color='blue')
+#     #axs[0,0].plot(colArray[np.abs(tE_vec-tauE(reference)).argmin()],tauE(reference),"o",color='red')
+#     axs[0,0].axhline(y=tauE(reference,mode=modeHL),color='red',linestyle='--',label='reference setup')
+#     xlimits = [-0.5,len(namesArray)-0.5]#axs[0,0].get_xlim()
+#     axs[0,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
+#     axs[0,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
+#     axs[0,0].set_xlim(xlimits)
+#     ylimits = axs[0,0].get_ylim()
+#     axs[0,0].set_ylim([ylimits[0],ylimits[1]*1.34])
+
+#     axs[0,0].legend()
+
+#     #-----------------------------------------------------------------------------------------------------------------------------------------
+
+#     for i in range(len(colArray)): errorBar(axs[0,1],namesArray[i],t2_vec[i],0.3*t2_vec[i],colour='grey')
+#     axs[0,1].plot(namesArray,t2_vec,'o',color='grey')
+#     axs[0,1].set_title(r'$\Delta{t}_{cool}$ [ms]')   
+#     axs[0,1].plot(namesArray[np.abs(t2_vec-t2_vec.max()).argmin()],t2_vec.max(),'o',color='blue')
+#     axs[0,1].plot(namesArray[np.abs(t2_vec-t2_vec.min()).argmin()],t2_vec.min(),'o',color='blue')
+#     #axs[0,1].plot(colArray[np.abs(t2_vec-DTcool(reference)).argmin()],DTcool(reference),"o",color='red')
+#     axs[0,1].axhline(y=DTcool(reference),color='red',linestyle='--')
+#     axs[0,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
+#     axs[0,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
+#     axs[0,1].set_xlim(xlimits)
+
+#     #-----------------------------------------------------------------------------------------------------------------------------------------
+
+#     for i in range(len(namesArray)):  errorBar(axs[1,0],namesArray[i],tCQ_vec[i],0.3*tCQ_vec[i],colour='grey')
+#     axs[1,0].plot(namesArray,tCQ_vec,'o',color='grey')
+#     axs[1,0].set_title(r'$\tau_{CQ}^{lin}$ [ms]')   
+#     axs[1,0].plot(namesArray[np.abs(tCQ_vec-tCQ_vec.max()).argmin()],tCQ_vec.max(),'o',color='blue')
+#     axs[1,0].plot(namesArray[np.abs(tCQ_vec-tCQ_vec.min()).argmin()],tCQ_vec.min(),'o',color='blue')
+#     #axs[1,0].plot(colArray[np.abs(lQ_vec-lambdaMHD_rough(reference)*1e3).argmin()],lambdaMHD_rough(reference)*1e3,"o",color='red')
+#     axs[1,0].axhline(y=tauCQlinmin(reference),color='red',linestyle='--')
+#     axs[1,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
+#     axs[1,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
+#     axs[1,0].set_xlim(xlimits)
+
+#     #-----------------------------------------------------------------------------------------------------------------------------------------
+
+#     for i in range(len(colArray)): 
+#         axs[1,1].plot([namesArray[i],namesArray[i]],[lEich[i],lQ_vec[i]],color='grey',linewidth=0.3)
+#     axs[1,1].plot(namesArray,(lQ_vec+lEich)/2,'o',color='grey')
+#     axs[1,1].set_title(r'$\lambda_{q}$ [mm]')   
+#     axs[1,1].plot(namesArray[np.abs((lQ_vec+lEich)/2-(lQ_vec.max()+lEich.max())/2).argmin()],(lQ_vec.max()+lEich.max())/2,'o',color='blue')
+#     axs[1,1].plot(namesArray[np.abs((lQ_vec+lEich)/2-(lQ_vec.min()+lEich.min())/2).argmin()],(lQ_vec.min()+lEich.min())/2,'o',color='blue')
+#     #axs[1,0].plot(colArray[np.abs(lQ_vec-lambdaMHD_rough(reference)*1e3).argmin()],lambdaMHD_rough(reference)*1e3,"o",color='red')
+#     axs[1,1].axhline(y=(lambdaMHD(reference)+lambdaEich(reference))*5e2,color='red',linestyle='--')
+#     axs[1,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
+#     axs[1,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
+#     axs[1,1].set_xlim(xlimits)
+
+#     #-----------------------------------------------------------------------------------------------------------------------------------------
+
+#     for i in range(len(colArray)): errorBar(axs[2,0],namesArray[i],Wpol_vec[i],dWpol_vec[i],colour='grey')
+#     axs[2,0].plot(namesArray,Wpol_vec,'o',color='grey')
+#     #axs[2,0].set_title(r'$W_{pol,vv} = 1.1 \times W_{pol}$ [MW]',fontsize=12)   
+#     axs[2,0].set_title(r'$W_{pol,vv} = W_{CQ} \, /\, (1-HCF)^2$ [MW]',fontsize=12)   
+#     axs[2,0].plot(namesArray[np.abs(Wpol_vec-Wpol_vec.max()).argmin()],Wpol_vec.max(),'o',color='blue')
+#     axs[2,0].plot(namesArray[np.abs(Wpol_vec-Wpol_vec.min()).argmin()],Wpol_vec.min(),'o',color='blue')
+#     # axs[1,1].plot(colArray[np.abs(Wpol_vec-Wth(reference)*1e-6).argmin()],Wth(reference)*1e-6,"o",color='red')
+#     axs[2,0].axhline( y=Wpol(reference,li3_betap="li3")/1e6 ,  color='red' , linestyle='--')
+#     axs[2,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
+#     axs[2,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
+#     axs[2,0].set_xlim(xlimits)
+
+#     #-----------------------------------------------------------------------------------------------------------------------------------------
+
+#     axs[2,1].plot(namesArray,Wth_vec,'o',color='grey')
+#     axs[2,1].set_title(r'$W_{th}$ [MW]',fontsize=12)   
+#     axs[2,1].plot(namesArray[np.abs(Wth_vec-Wth_vec.max()).argmin()],Wth_vec.max(),'o',color='blue')
+#     axs[2,1].plot(namesArray[np.abs(Wth_vec-Wth_vec.min()).argmin()],Wth_vec.min(),'o',color='blue')
+#     # axs[1,1].plot(colArray[np.abs(Wpol_vec-Wth(reference)*1e-6).argmin()],Wth(reference)*1e-6,"o",color='red')
+#     axs[2,1].axhline( y=reference["Wth"]/1e6 ,  color='red' , linestyle='--')
+#     axs[2,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
+#     axs[2,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
+#     axs[2,1].set_xlim(xlimits)
+
+#     plt.subplots_adjust(hspace=0.5)
+#     #plt.tight_layout()
+#     plt.show()
+
+# def Melt1plot(scenario,SPR="SPR-69/B",PF=1):
+#     """
+#     Produces the plot showing ratio of the incoming conducted & radiated loads during TQ and CQ to the critical melting value, for the various
+#     disruption types considered in the study.
+
+#     Requires that you have already called the function "Predictions" on the same scenario
+
+#         Input:
+#           - scenario:   name of a python library-type scenario
+#           - SPR:        string type input corresponding to the scenario name (goes in the title of the figure) 
+#           - PF:         0 --> not considering peaking factors;   1 --> considering peaking factors 
+#     """
+#     qcritTQ1 = qmelt(scenario["tauTQ"])
+#     qcritTQ2 = qmelt(scenario["tauTQ"]*3)
+#     qcritTQr = qmelt(scenario["tauTQ"]*4)
+#     qcritCQ  = qmelt(scenario["tauCQ"])
+
+#     Sdiv = scenario["S_div"]
+#     S_FW = scenario["S_FW"]
+#     Scp = scenario["S_cp"]
+
+#     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
+#     Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+#     # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
+#     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
+
+#     W_PFC(scenarioName=scenario,phase="TQ",peakingFactors=PF)
+#     W_PFC(scenarioName=scenario,phase="CQ",peakingFactors=PF)
+
+#     import matplotlib.pyplot as plt
+
+#     fig, axs = plt.subplots(1, 2, figsize=(15,5.5))
+
+#     fig.suptitle("Melting limit for tungsten ("+SPR+")",fontsize=18)
+
+#     ylimits = (1e-3,1e2)
+#     axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond) / qcritTQ1 , color='red'  , linewidth=1 ) # , label="ramp-up phase" )
+#     axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond) / qcritTQ2 , color='red'  , linewidth=1 , linestyle='--' ) # , label="ramp-down phase" )
+#     axs[0].semilogy(disruptions, scenario["WTQ_rad"]/(scenario["tauTQ"]*4*Swet_rad)  / qcritTQr , color='blue' , linewidth=1 )
+#     axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond) / qcritTQ1 , 'o'          , color='red'  , label="conducted" )
+#     axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond) / qcritTQ2 , 'o'          , color='red' )
+#     axs[0].semilogy(disruptions, scenario["WTQ_rad"]/(scenario["tauTQ"]*4*Swet_rad)  / qcritTQr , 'o'          , color='blue' , label="radiated"  )
+#     limits = axs[0].get_xlim()
+#     axs[0].semilogy([-1,10]    ,   np.ones(2)                                                        , color='black', linestyle=':' )
+#     axs[0].set_ylim(ylimits)
+#     axs[0].set_xlim(limits)
+#     axs[0].set_title("Thermal Quench",fontsize=16)
+#     axs[0].set_ylabel(r"$q_{wall}$ / $q_{melt}$",fontsize=16)
+#     axs[0].axhspan(1e0,1e10,color='black',alpha=0.1 , label="wall melting" )
+#     axs[0].axhspan(1e-10,1e0,color='cyan',alpha=0.1 , label="not melting" )
+#     axs[0].text(0,1.5,"melting",color='black',fontsize=12)
+#     axs[0].text(0,5e-1,"not melting",color='black',fontsize=12)
+#     # axs[0].text(6.7,35,"ramp\ndown",color='red',fontsize=10)
+#     # axs[0].text(6.3,2e5,"ramp\nup",color='red',fontsize=10)
+#     axs[0].semilogy([6,6.5],[450e-1,450e-1],color='red')
+#     axs[0].semilogy([6,6.5],[150e-1,150e-1],color='red',linestyle='--')
+#     axs[0].text(6.7,350e-1,"ramp\nup",color='red',fontsize=10)
+#     axs[0].text(6.7,100e-1,"ramp\ndown",color='red',fontsize=10)
+#     axs[0].legend(loc='upper left',fontsize=12)
+
+#     axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond) / qcritCQ   , color='red'  , linewidth=1   )
+#     axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ   , color='blue' , linewidth=1   )
+#     axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond) / qcritCQ   , 'o'          , color='red'   )
+#     axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ   , 'o'          , color='blue'  )
+#     axs[1].semilogy([-1,10]    , np.ones(2)                                                     , color='black', linestyle=':' )
+#     axs[1].set_ylim(ylimits)
+#     axs[1].set_xlim(limits)
+#     axs[1].set_title("Current Quench",fontsize=16)
+#     axs[1].axhspan(1e0,1e10,color='black',alpha=0.1)
+#     axs[1].axhspan(1e-10,1e0,color='cyan',alpha=0.1 )
+#     axs[1].text(0,1.5,"melting",color='black',fontsize=12)
+#     axs[1].text(0,5e-1,"not melting",color='black',fontsize=12)
+#     #axs[1].set_ylabel(r"$q_{wall} / q_{melt}$")
+
+#     plt.show()
+
+# def Melt2plot(scenario,SPR="SPR-69/B",PF=1):
+#     """
+#     Produces the plot showing surface temperature increases during TQ and CQ, owing to conduction and radiation, for the various
+#     disruption types considered in the study.
+
+#     Requires that you have already called the function "Predictions" on the same scenario
+
+#         Input:
+#           - scenario:   name of a python library-type scenario
+#           - SPR:        string type input corresponding to the scenario name (goes in the title of the figure)  
+#           - PF:         0 --> not considering peaking factors;   1 --> considering peaking factors 
+#     """
+
+#     def Tfinal(q0,time):
+#         Cp    = 130    # [J / kg K]
+#         k     = 170    # [W / m K]
+#         rho   = 19250  # [kg / m3]
+#         T0    = 550 + 273.15
+
+#         return 2 * q0 * np.sqrt( time / (rho * Cp * k * np.pi) ) #+ T0
+
+#     T0    = 550 + 273.15
+#     Tmelt = 3695 - T0 # [K]
+#     Tvap  = 6203 - T0 # [K]
+
+#     Sdiv = scenario["S_div"]
+#     S_FW = scenario["S_FW"]
+#     Scp = scenario["S_cp"]
+
+#     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
+#     Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+#     # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
+#     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
+
+#     TTQcon1 = np.zeros(8)
+#     TTQcon2 = np.zeros(8)
+#     TTQrad  = np.zeros(8)
+#     TCQcon  = np.zeros(8)
+#     TCQrad  = np.zeros(8)
+
+#     W_PFC(scenarioName=scenario,phase="TQ",peakingFactors=PF)
+#     W_PFC(scenarioName=scenario,phase="CQ",peakingFactors=PF)
+
+#     t_TQ = scenario["tauTQ"][0]
+#     for jj in range(8):
+#         TTQcon1[jj] = Tfinal( time=t_TQ , q0=scenario["WTQ_con1"][jj]/(t_TQ*Swet_cond[jj]) )
+#         if (TTQcon1[jj] >= Tvap): TTQcon1[jj] = Tvap
+#         if (t_TQ >= scenario["tvs_TQ_con1"][jj]): TTQcon1[jj] = Tvap   
+
+#         TTQcon2[jj] = Tfinal( time=t_TQ*3 , q0=scenario["WTQ_con2"][jj]/(t_TQ*3*Swet_cond[jj]) ) #+ TTQcon1[jj]
+#         if (TTQcon2[jj] >= Tvap): TTQcon2[jj] = Tvap
+#         if (t_TQ*3 >= scenario["tvs_TQ_con2"][jj]): TTQcon2[jj] = Tvap
+
+#         TTQrad[jj] = Tfinal( time=t_TQ*4 , q0=scenario["WTQ_rad"][jj]/(t_TQ*4*Swet_rad[jj]) )
+#         if (TTQrad[jj] >= Tvap): TTQrad[jj] = Tvap
+
+#         TCQcon[jj] = Tfinal( time=scenario["tauCQ"][jj] , q0=scenario["WCQ_con"][jj]/(scenario["tauCQ"][jj]*Swet_cond[jj]) )
+#         if (TCQcon[jj] >= Tvap): TCQcon[jj] = Tvap
+#         #if (scenario["tauCQ"][jj] >= scenario["tvs_CQ_con"][jj]): TCQcon[jj] = Tvap
+
+#         TCQrad[jj] = Tfinal( time=scenario["tauCQ"][jj] , q0=scenario["WCQ_rad"][jj]/(scenario["tauCQ"][jj]*Swet_rad[jj]) )
+#         if (TCQrad[jj] >= Tvap): TCQrad[jj] = Tvap
+
+
+#     import matplotlib.pyplot as plt
+
+#     fig, axs = plt.subplots(1, 2, figsize=(15,5.5))
+
+#     fig.suptitle("Tungsten wall temperature raise ("+SPR+")",fontsize=18)
+
+#     ylimits = (3e0,3e4)
+#     axs[0].semilogy(disruptions,   TTQcon1   , color='red'  , linewidth=1 )# , label="ramp-up phase" )
+#     axs[0].semilogy(disruptions,   TTQcon2   , color='red'  , linewidth=1 , linestyle='--' ) # , label="ramp-down phase" )
+#     axs[0].semilogy(disruptions[0:8],   TTQrad[0:8]    , color='blue' , linewidth=1 )
+#     axs[0].semilogy(disruptions,   TTQcon1   , 'o'          , color='red'  , label="conducted" )
+#     axs[0].semilogy(disruptions,   TTQcon2   , 'o'          , color='red' )
+#     axs[0].semilogy(disruptions,   TTQrad    , 'o'          , color='blue' , label="radiated"  )
+#     limits = axs[0].get_xlim()
+#     axs[0].semilogy([-1,10]    ,   np.ones(2)*Tmelt         , color='black', linestyle=':' )
+#     axs[0].semilogy([-1,10]    ,   np.ones(2)*Tvap          , color='black', linestyle=':' )
+#     axs[0].set_ylim(ylimits)
+#     axs[0].set_xlim(limits)
+#     axs[0].set_title("Thermal Quench",fontsize=16)
+#     axs[0].set_ylabel(r"$\Delta T_{wall}$ / $k_B$ [K]",fontsize=16)
+#     axs[0].axhspan(Tvap , 1e10 , color='red'   ,alpha=0.1 , label="vaporised wall" )
+#     axs[0].axhspan(Tmelt, Tvap , color='orange',alpha=0.1 , label="molten wall" )
+#     axs[0].axhspan(0    , Tmelt, color='cyan'  ,alpha=0.1 , label="solid wall" )
+#     axs[0].semilogy([6,6.5],[25e0,25e0],color='red')
+#     axs[0].semilogy([6,6.5],[8e0,8e0],color='red',linestyle='--')
+#     axs[0].text(6.7,5e0,"ramp\ndown",color='red',fontsize=10)
+#     axs[0].text(6.7,18e0,"ramp\nup",color='red',fontsize=10)
+#     # axs[0].text(6.7,35,"ramp\ndown",color='red',fontsize=10)
+#     # axs[0].text(6.3,2e5,"ramp\nup",color='red',fontsize=10)
+#     #axs[0].plot([6,6.5],[550,550],color='red')
+#     #axs[0].plot([6,6.5],[250,250],color='red',linestyle='--')
+#     #axs[0].text(6.7,180,"ramp\ndown",color='red',fontsize=10)
+#     #axs[0].text(6.7,450,"ramp\nup",color='red',fontsize=10)
+#     #axs[0].legend(loc='lower left',fontsize=12)
+
+#     axs[1].semilogy(disruptions,   TCQcon   , color='red'  , linewidth=1   )
+#     axs[1].semilogy(disruptions,   TCQrad   , color='blue' , linewidth=1   )
+#     axs[1].semilogy(disruptions,   TCQcon   , 'o'          , color='red'   , label="conducted" )
+#     axs[1].semilogy(disruptions,   TCQrad   , 'o'          , color='blue'  , label="radiated" )
+#     axs[1].semilogy([-1,10]    ,   np.ones(2)*Tmelt        , color='black', linestyle=':' )
+#     axs[1].semilogy([-1,10]    ,   np.ones(2)*Tvap         , color='black', linestyle=':' )
+#     axs[1].text(-.1,Tmelt*0.65,"melting point",color='black',fontsize=12)
+#     axs[1].text(-.1,Tvap *1.20,"vapour point",color='black',fontsize=12)
+#     axs[1].set_ylim(ylimits)
+#     axs[1].set_xlim(limits)
+#     axs[1].set_title("Current Quench",fontsize=16)
+#     axs[1].axhspan(Tvap , 1e10 , color='red'   , alpha=0.1 , label="vaporised wall" )
+#     axs[1].axhspan(Tmelt, Tvap , color='orange', alpha=0.1 , label="molten wall" )
+#     axs[1].axhspan(0    , Tmelt, color='cyan'  , alpha=0.1 , label="solid wall" )
+#     #axs[1].text(0,1.5,"melting",color='black',fontsize=12)
+#     #axs[1].text(0,5e-1,"not melting",color='black',fontsize=12)
+#     #axs[1].set_ylabel(r"$q_{wall} / q_{melt}$")
+#     axs[0].legend(loc='lower left',fontsize=12)
+
+#     plt.show()
+
+#     return TCQrad  
 
 if __name__ == "__main__":
     """ Run the code """
