@@ -186,7 +186,7 @@ def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
     if scenarioLabel is not None:
         scenarioOut["name"] = scenarioLabel
     else:
-        scenarioOut["name"] = file.iloc[row(2), col(cc)]
+        scenarioOut["name"] = str(file.iloc[row(2), col(cc)])
 
     scenarioOut["R0"]     = file.iloc[row(3),  col(cc)]
     scenarioOut["a"]      = file.iloc[row(4),  col(cc)]

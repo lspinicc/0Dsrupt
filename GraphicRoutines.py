@@ -61,8 +61,6 @@ def scenarioCloud(reference,colArray,filename,modeHL='L'):
 
     def errorBar(subplot,x,y,dy,colour):
         subplot.plot([x,x],[y-dy,y+dy],color=colour,linewidth=0.3)
-        # subplot.plot([x-0.3,x+0.3],[y+dy,y+dy],color=colour)
-        # subplot.plot([x-0.3,x+0.3],[y-dy,y-dy],color=colour)
 
     fig, axs = plt.subplots(3, 2, figsize=(9, 9))
 
@@ -102,13 +100,13 @@ def scenarioCloud(reference,colArray,filename,modeHL='L'):
 
     #-----------------------------------------------------------------------------------------------------------------------------------------
 
-    for i in range(len(colArray)): errorBar(axs[0,1],namesArray[i],d_t2_vec[i],t2_vec[i]*t2_vec[i],colour='grey')
+    for i in range(len(colArray)): errorBar(axs[0,1],namesArray[i],t2_vec[i],d_t2_vec[i]*t2_vec[i],colour='grey')
     axs[0,1].plot(namesArray,t2_vec,'o',color='grey')
     axs[0,1].set_title(r'$\Delta{t}_{cool}$ [ms]')   
     axs[0,1].plot(namesArray[np.abs(t2_vec-t2_vec.max()).argmin()],t2_vec.max(),'o',color='blue')
     axs[0,1].plot(namesArray[np.abs(t2_vec-t2_vec.min()).argmin()],t2_vec.min(),'o',color='blue')
     #axs[0,1].plot(colArray[np.abs(t2_vec-DTcool(reference)).argmin()],DTcool(reference),"o",color='red')
-    axs[0,1].axhline(y=DTcool(reference),color='red',linestyle='--')
+    axs[0,1].axhline(y=DTcool(reference)*1e3,color='red',linestyle='--')
     axs[0,1].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
     axs[0,1].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
     axs[0,1].set_xlim(xlimits)
@@ -121,7 +119,7 @@ def scenarioCloud(reference,colArray,filename,modeHL='L'):
     axs[1,0].plot(namesArray[np.abs(tCQ_vec-tCQ_vec.max()).argmin()],tCQ_vec.max(),'o',color='blue')
     axs[1,0].plot(namesArray[np.abs(tCQ_vec-tCQ_vec.min()).argmin()],tCQ_vec.min(),'o',color='blue')
     #axs[1,0].plot(colArray[np.abs(lQ_vec-lambdaMHD_rough(reference)*1e3).argmin()],lambdaMHD_rough(reference)*1e3,"o",color='red')
-    axs[1,0].axhline(y=tauCQlinmin(reference),color='red',linestyle='--')
+    axs[1,0].axhline(y=tauCQlinmin(reference)*1e3,color='red',linestyle='--')
     axs[1,0].axvspan(xlimits[1]-3,xlimits[1]-1,color='yellow',alpha=0.3)
     axs[1,0].axvspan(xlimits[1]-1,xlimits[1],color='green',alpha=0.3)
     axs[1,0].set_xlim(xlimits)
@@ -145,7 +143,7 @@ def scenarioCloud(reference,colArray,filename,modeHL='L'):
     for i in range(len(colArray)): errorBar(axs[2,0],namesArray[i],Wpol_vec[i],d_Wpol_vec[i]*Wpol_vec[i],colour='grey')
     axs[2,0].plot(namesArray,Wpol_vec,'o',color='grey')
     #axs[2,0].set_title(r'$W_{pol,vv} = 1.1 \times W_{pol}$ [MW]',fontsize=12)   
-    axs[2,0].set_title(r'$W_{pol,vv} = W_{CQ} \, /\, (1-HCF)^2$ [MW]',fontsize=12)   
+    axs[2,0].set_title(r'$W_{pol,vv} = 1.1 \times W_{pol}$ [MW]',fontsize=12)   
     axs[2,0].plot(namesArray[np.abs(Wpol_vec-Wpol_vec.max()).argmin()],Wpol_vec.max(),'o',color='blue')
     axs[2,0].plot(namesArray[np.abs(Wpol_vec-Wpol_vec.min()).argmin()],Wpol_vec.min(),'o',color='blue')
     # axs[1,1].plot(colArray[np.abs(Wpol_vec-Wth(reference)*1e-6).argmin()],Wth(reference)*1e-6,"o",color='red')
@@ -156,6 +154,7 @@ def scenarioCloud(reference,colArray,filename,modeHL='L'):
 
     #-----------------------------------------------------------------------------------------------------------------------------------------
 
+    for i in range(len(colArray)): errorBar(axs[2,1],namesArray[i],Wth_vec[i],d_Wth_vec[i]*Wth_vec[i],colour='grey')
     axs[2,1].plot(namesArray,Wth_vec,'o',color='grey')
     axs[2,1].set_title(r'$W_{th}$ [MW]',fontsize=12)   
     axs[2,1].plot(namesArray[np.abs(Wth_vec-Wth_vec.max()).argmin()],Wth_vec.max(),'o',color='blue')
