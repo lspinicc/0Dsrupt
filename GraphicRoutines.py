@@ -191,23 +191,27 @@ def Melt1plot(scenario,SPR="SPR-69/B",PF=1):
     Scp = scenario["S_cp"]
 
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
-    Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    # Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
     # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
 
     W_PFC(scenarioName=scenario,phase="TQ",peakingFactors=PF)
     W_PFC(scenarioName=scenario,phase="CQ",peakingFactors=PF)
 
+    Swet_cond_1  = scenario["S_wet_cond_TQ1"] #[ Sdiv , Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_2  = scenario["S_wet_cond_TQ2"] #[ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_CQ = scenario["S_wet_cond_CQ"] #[ Sdiv , Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+
     fig, axs = plt.subplots(1, 2, figsize=(15,5.5))
 
     fig.suptitle("Melting limit for tungsten ("+SPR+")",fontsize=18)
 
     ylimits = (1e-3,1e2)
-    axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond) / qcritTQ1 , color='red'  , linewidth=1 ) # , label="ramp-up phase" )
-    axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond) / qcritTQ2 , color='red'  , linewidth=1 , linestyle='--' ) # , label="ramp-down phase" )
+    axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond_1) / qcritTQ1 , color='red'  , linewidth=1 ) # , label="rise phase" )
+    axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond_2) / qcritTQ2 , color='red'  , linewidth=1 , linestyle='--' ) # , label="fall phase" )
     axs[0].semilogy(disruptions, scenario["WTQ_rad"]/(scenario["tauTQ"]*4*Swet_rad)  / qcritTQr , color='blue' , linewidth=1 )
-    axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond) / qcritTQ1 , 'o'          , color='red'  , label="conducted" )
-    axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond) / qcritTQ2 , 'o'          , color='red' )
+    axs[0].semilogy(disruptions, scenario["WTQ_con1"]/(scenario["tauTQ"]*1*Swet_cond_1) / qcritTQ1 , 'o'       , color='red'  , label="conducted" )
+    axs[0].semilogy(disruptions, scenario["WTQ_con2"]/(scenario["tauTQ"]*3*Swet_cond_2) / qcritTQ2 , 'o'       , color='red' )
     axs[0].semilogy(disruptions, scenario["WTQ_rad"]/(scenario["tauTQ"]*4*Swet_rad)  / qcritTQr , 'o'          , color='blue' , label="radiated"  )
     limits = axs[0].get_xlim()
     axs[0].semilogy([-1,10]    ,   np.ones(2)                                                        , color='black', linestyle=':' )
@@ -225,13 +229,13 @@ def Melt1plot(scenario,SPR="SPR-69/B",PF=1):
     axs[0].semilogy([6,6.5],[150e-1,150e-1],color='red',linestyle='--')
     axs[0].text(6.7,350e-1,"rise\nphase",color='red',fontsize=10)
     axs[0].text(6.7,100e-1,"fall\nphase",color='red',fontsize=10)
-    axs[0].legend(loc='upper left',fontsize=12)
+    axs[0].legend(loc='lower left',fontsize=12)
 
-    axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond) / qcritCQ   , color='red'  , linewidth=1   )
-    axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ   , color='blue' , linewidth=1   )
-    axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond) / qcritCQ   , 'o'          , color='red'   )
-    axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ   , 'o'          , color='blue'  )
-    axs[1].semilogy([-1,10]    , np.ones(2)                                                     , color='black', linestyle=':' )
+    axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond_CQ) / qcritCQ , color='red'  , linewidth=1   )
+    axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ    , color='blue' , linewidth=1   )
+    axs[1].semilogy(disruptions, scenario["WCQ_con"] /(scenario["tauCQ"]*Swet_cond_CQ) / qcritCQ , 'o'          , color='red'   )
+    axs[1].semilogy(disruptions, scenario["WCQ_rad"] /(scenario["tauCQ"]*Swet_rad)  / qcritCQ    , 'o'          , color='blue'  )
+    axs[1].semilogy([-1,10]    , np.ones(2)                                                      , color='black', linestyle=':' )
     axs[1].set_ylim(ylimits)
     axs[1].set_xlim(limits)
     axs[1].set_title("Current Quench",fontsize=16)
@@ -273,7 +277,6 @@ def Melt2plot(scenario,SPR="SPR-69/B",PF=1):
     Scp = scenario["S_cp"]
 
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
-    Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
     # Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
 
@@ -286,20 +289,24 @@ def Melt2plot(scenario,SPR="SPR-69/B",PF=1):
     W_PFC(scenarioName=scenario,phase="TQ",peakingFactors=PF)
     W_PFC(scenarioName=scenario,phase="CQ",peakingFactors=PF)
 
+    Swet_cond_1  = scenario["S_wet_cond_TQ1"] #[ Sdiv , Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_2  = scenario["S_wet_cond_TQ2"] #[ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_CQ = scenario["S_wet_cond_CQ"] #[ Sdiv , Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+
     t_TQ = scenario["tauTQ"][0]
     for jj in range(8):
-        TTQcon1[jj] = Tfinal( time=t_TQ , q0=scenario["WTQ_con1"][jj]/(t_TQ*Swet_cond[jj]) )
+        TTQcon1[jj] = Tfinal( time=t_TQ , q0=scenario["WTQ_con1"][jj]/(t_TQ*Swet_cond_1[jj]) )
         if (TTQcon1[jj] >= Tvap): TTQcon1[jj] = Tvap
         if (t_TQ >= scenario["tvs_TQ_con1"][jj]): TTQcon1[jj] = Tvap   
 
-        TTQcon2[jj] = Tfinal( time=t_TQ*3 , q0=scenario["WTQ_con2"][jj]/(t_TQ*3*Swet_cond[jj]) ) #+ TTQcon1[jj]
+        TTQcon2[jj] = Tfinal( time=t_TQ*3 , q0=scenario["WTQ_con2"][jj]/(t_TQ*3*Swet_cond_2[jj]) ) #+ TTQcon1[jj]
         if (TTQcon2[jj] >= Tvap): TTQcon2[jj] = Tvap
         if (t_TQ*3 >= scenario["tvs_TQ_con2"][jj]): TTQcon2[jj] = Tvap
 
         TTQrad[jj] = Tfinal( time=t_TQ*4 , q0=scenario["WTQ_rad"][jj]/(t_TQ*4*Swet_rad[jj]) )
         if (TTQrad[jj] >= Tvap): TTQrad[jj] = Tvap
 
-        TCQcon[jj] = Tfinal( time=scenario["tauCQ"][jj] , q0=scenario["WCQ_con"][jj]/(scenario["tauCQ"][jj]*Swet_cond[jj]) )
+        TCQcon[jj] = Tfinal( time=scenario["tauCQ"][jj] , q0=scenario["WCQ_con"][jj]/(scenario["tauCQ"][jj]*Swet_cond_CQ[jj]) )
         if (TCQcon[jj] >= Tvap): TCQcon[jj] = Tvap
         #if (scenario["tauCQ"][jj] >= scenario["tvs_CQ_con"][jj]): TCQcon[jj] = Tvap
 
@@ -312,8 +319,8 @@ def Melt2plot(scenario,SPR="SPR-69/B",PF=1):
     fig.suptitle("Tungsten wall temperature raise ("+SPR+")",fontsize=18)
 
     ylimits = (3e0,3e4)
-    axs[0].semilogy(disruptions,   TTQcon1   , color='red'  , linewidth=1 )# , label="ramp-up phase" )
-    axs[0].semilogy(disruptions,   TTQcon2   , color='red'  , linewidth=1 , linestyle='--' ) # , label="ramp-down phase" )
+    axs[0].semilogy(disruptions,   TTQcon1   , color='red'  , linewidth=1 )# , label="rise phase" )
+    axs[0].semilogy(disruptions,   TTQcon2   , color='red'  , linewidth=1 , linestyle='--' ) # , label="fall phase" )
     axs[0].semilogy(disruptions[0:8],   TTQrad[0:8]    , color='blue' , linewidth=1 )
     axs[0].semilogy(disruptions,   TTQcon1   , 'o'          , color='red'  , label="conducted" )
     axs[0].semilogy(disruptions,   TTQcon2   , 'o'          , color='red' )

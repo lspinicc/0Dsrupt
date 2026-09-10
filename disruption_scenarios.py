@@ -74,7 +74,13 @@ SCENARIO = {
     # "Wpol_c"   : np.zeros(8),
     # "Wpol_r"   : np.zeros(8),
     "lamEich"  : 0,
-    "lamGoldston": 0
+    "lamGoldston": 0,
+    "lamGoldston_TQ1": np.zeros(8),
+    "lamGoldston_TQ2": np.zeros(8),
+    "lamGoldston_CQ" : np.zeros(8),
+    "S_wet_cond_TQ1": np.zeros(8),
+    "S_wet_cond_TQ2": np.zeros(8),
+    "S_wet_cond_CQ": np.zeros(8)
 }
 
 def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
@@ -262,6 +268,21 @@ def tauCQlinmin(scenarioName, linexp="lin", mitigatedVDE=0, MDlikely=0, longCQ=0
     if (linexp == "exp"): tauCQ *= 0.6 / np.log(4)
     return tauCQ * 1e-3    # [seconds]
 
+def Bpol(scenarioName):
+    """
+    Returns an estimate for the poloidal magnetic field at outer / inner mid plane.
+
+    Inputs:
+      - scenarioName:   dictionary type plasma flattop scenario.
+    
+    Outputs:
+      - Bpol:           poloidal magnetic field at outer / inner mid plane.
+    """
+
+    Bpol = mu0 * scenarioName["Ip"] / (2 * np.pi * scenarioName["a"] * np.sqrt((1 + scenarioName["kappa"] ** 2) / 2))
+
+    return Bpol
+
 def qCyl(scenarioName):
     """
         Cylindrical safety factor, used for the MHD estimate of the minimal detachment length lambda_{q,MHD}
@@ -278,8 +299,7 @@ def qCyl(scenarioName):
     R0 = scenarioName["R0"]
     #
     #    return a**2 * B0 * (1+kappa**2) / ( R0 * Ip * 4e-7 )
-    Bpol = mu0 * Ip / (2 * np.pi * a * np.sqrt((1 + kappa ** 2) / 2))
-    return a * B0 * np.sqrt((1 + kappa ** 2) / 2) / (R0 * Bpol)
+    return a * B0 * np.sqrt((1 + kappa ** 2) / 2) / (R0 * Bpol(scenarioName))
 
 def lambdaEich(scenarioName):
     Ip = scenarioName["Ip"]
@@ -293,21 +313,29 @@ def lambdaEich(scenarioName):
 
     return 0.63e-3 * Bpol**(-1.19)
 
-def lambdaMHD(scenarioName,model='HD'):
+def lambdaMHD(scenarioName,model='HD',Psep=None):
     """
-    Attempt to compute the power fall-off length using the formula provided by York University (Annex 1 in TD-0013190-B). 
-    Incomplete owing to lack of physical parameters.
+    Computes the power fall-off length using the formula provided by York University (Annex 1 in TD-0013190-B).
 
-    Still incomplete  ---> DO NOT USE!
+        Inputs:
+          - scenarioName:   dictionary type scenario.
+          - model:          set to 'HD' to compute λ_q with the Heuristic Drift formula + correction for ballooning turbulence (default).
+                            set to 'Eich' to compute λ_q with the Heuristic Drift formula + correction for ballooning turbulence.
+          - Psep:           Power crossing the separatrix. Ideally should be {W_loss / tau} for each transient. 
+                            (default value is the peak power through separatrix at equilibrium)  
+
     """
     if (model == 'HD'):
         Z_average = 1  # charge imparity overall in the plasma: ne / Σ_s{ n_s }
+
+        if (Psep==None):
+            Psep = scenarioName["Psep"]  # if unpecified, use the peak Power through separatrix
 
         def kz(Zeff) : 
             return 0.672 + 0.076 * Zeff**0.5 + 0.252 * Zeff
 
         # result given in meters
-        lamHD = 5671 * ( ( scenarioName["Psep"] * 1.5 )**(1./8) * 1.5 * ( 2. / ( 1. + Z_average ) )**(7./16) 
+        lamHD = 5671 * ( ( Psep * 1.5 )**(1./8) * 1.5 * ( 2. / ( 1. + Z_average ) )**(7./16) 
                          * ( 1 + scenarioName["kappa"]**2 )**(5./8) * scenarioName["a"]**(17/8) * scenarioName["B0"]**0.25 
                          / ( scenarioName["Ip"]**(9./8) * scenarioName["R0"] ) ) * kz(scenarioName["Zeff"])**(1./8)
 
@@ -325,18 +353,6 @@ def lambdaMHD(scenarioName,model='HD'):
     if (alphaMHD > alphaCrit) :
         lamMHD *= ( alphaMHD / alphaCrit )**(7./9)
     return lamMHD #[m]
-
-def lambdaMHD_rough(scenarioName):
-    """
-        Computation of the power fall-off length estimate from MHD using the rough scaling in the final equation of Annex 1 in TD-0013190-B.
-        This is a rescaling of an empirical value obtained for a previous device configuration (STEP500)
-
-            input:  name of a python dictionary relative to a scenario
-            output: lambda_{q,MHD}
-    """
-    #    return 1.18e-3 * (scenarioName["R0"]/1.8)**(7/9) * (2.15/2.76)**(14/9) * (scenarioName["B0"]/2.43)**(-14/9)
-    return 1.18e-3 * (scenarioName["R0"] / 1.8) ** (7 / 9) * (qCyl(scenarioName) / 2.76) ** (14 / 9) * (
-                scenarioName["B0"] / 2.43) ** (-14 / 9) * (scenarioName["p_sep"] / 2.13e3) ** (7./9)
 
 def Emax1(scenarioName,time,Wplasma,Swetted=1,flagVSactive=False):
     """
@@ -492,7 +508,8 @@ def Wcoupled(scenarioName,lin_exp=0,VDE=False):
         Outputs:
           - Wcoupled:          coupled magnetic energy during CQ
     """
-    L = ExternalInductance(a=scenarioName["a"]*1.1,R=scenarioName["R0"]*1.1,k=scenarioName["kappa"])
+    a_wall = 2.5
+    L = ExternalInductance(a=scenarioName["a"]*1.1,R=scenarioName["R0"],k=scenarioName["kappa"])
     # a_wall = scenarioName["a"] * (1+(scenarioName["kappa"]))/2
     # R_wall = scenarioName["R0"] 
     # k0= (4*a_wall*R_wall)**0.5 / (a_wall + R_wall)
@@ -511,23 +528,29 @@ def Wcoupled(scenarioName,lin_exp=0,VDE=False):
         
     return Wcoupled
 
-def SOL(scenarioName,Wcond,onDivertor=False):
-    λq      = scenarioName["lamEich"]#["lamGoldston"]#(scenarioName["lamEich"]*scenarioName["lamGoldston"])**0.5
-    grazing = np.sin(3*np.pi/180)
-    Rtarget = scenarioName["R0"] + scenarioName["a"]   
-    spreading = 1
-    f_target  = 1
+def SOL(scenarioName,Psep,alpha=3*np.pi/180,Ndiv=1):
+    """
+    Computes the wetted area surface on the divertor for MD cases and for a given scenario.
 
-    Wcond_through_SOL = Wcond / (4 * np.pi * Rtarget * λq)
+    Inputs:
+      - scenarioName:   dictionary type variable containing the initial peak-plasma scenario
+      - Psep:           Power crossing the separatrix at a given transient phase in a disruption. 
+                        Should be: W{transient} / tau{transient}.   
+      - alpha:          Grazing angle on the divertor plate. (default: 3 degrees).
+      - Ndiv:           Number of divertors invested by the load. (default: 1).
+    
+    Outputs:
+      - S:              wetted area on the divertor, assuming that λq = (λq{Goldston+MHD} + λq{Eich}) / 2
+    """
+    λq      = 0.5 * ( lambdaMHD(scenarioName=scenarioName,Psep=Psep) + scenarioName["lamEich"] )
+    grazing = np.sin(alpha)
 
-    if onDivertor:
-        Wcond_through_SOL *= grazing / spreading * f_target 
+    Bp_over_Bt = Bpol(scenarioName) / scenarioName["B0"]
 
-    # Wcond_through_SOL = Wcond
-    W_rad_from_SOL = Wcond - Wcond_through_SOL
+    S = 2*np.pi*λq*Bp_over_Bt*Ndiv / (grazing * scenarioName["R0"] 
+                                      * (0.25/(scenarioName["R0"]-scenarioName["a"])**2 + 0.75/(scenarioName["R0"]+scenarioName["a"])**2) )
 
-    # return ( Wcond_through_SOL , W_rad_from_SOL )
-    return (Wcond,0)
+    return S
 
 def W_PFC(scenarioName,phase,peakingFactors=0):
     """
@@ -559,7 +582,8 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
     Sdiv = scenarioName["S_div"]
     S_FW = scenarioName["S_FW"]
     Scp = scenarioName["S_cp"]
-    Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_1 = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_2 = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
     #Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
@@ -585,29 +609,35 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             # I compute radiation from VS without considering peaking factors: 
             # this way I should have a better approximation, since peaks should average out with troughs
             # --> Final radiation load is the sum of {VS radiation (ramp-up + ramp down)} & {plasma emitted * RPF}
-            Wr1 = 0
-            Wr2 = 0
-            Wc1,Wr1 = SOL(scenarioName=scenarioName,Wcond=0.3*C_cond[i]*Wth)
-            Wc2,Wr2 = SOL(scenarioName=scenarioName,Wcond=0.7*C_cond[i]*Wth)
+            Wc1 = 0.3*C_cond[i]*Wth
+            Wc2 = 0.7*C_cond[i]*Wth
 
-            print("TQ: {i}) W_cond(1) = {Wc1:.2f};  W_cond(2) = {Wc2:.2f};".format(i=i,Wc1=Wc1,Wc2=Wc2))
+            scenarioName["lamGoldston_TQ1"][i] = lambdaMHD(scenarioName=scenarioName,Psep=Wc1/tau)
+            scenarioName["lamGoldston_TQ2"][i] = lambdaMHD(scenarioName=scenarioName,Psep=Wc2/(tau*3))
 
-            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1, Swetted=Swet_cond[i], flagVSactive=True)
-            (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2, Swetted=Swet_cond[i], flagVSactive=True)
+            if i in (0,1,6):
+                Swet_cond_1[i] = SOL( scenarioName=scenarioName , Psep=Wc1/tau )
+                Swet_cond_2[i] = SOL( scenarioName=scenarioName , Psep=Wc2/(tau*3) )
+
+            # print("TQ: {i}) W_cond(1) = {Wc1:.2f};  W_cond(2) = {Wc2:.2f};".format(i=i,Wc1=Wc1,Wc2=Wc2))
+
+            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1, Swetted=Swet_cond_1[i], flagVSactive=True)
+            (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2, Swetted=Swet_cond_1[i], flagVSactive=True)
             scenarioName["tvs_TQ_con1"][i] = tvs_con1
             scenarioName["tvs_TQ_con2"][i] = tvs_con2
             scenarioName["isVSactive_con1"][i] = isVS_con1
             scenarioName["isVSactive_con2"][i] = isVS_con2
-            scenarioName["WTQ_rad"][i] = ( Wrad(scenarioName["isVSactive_con1"][i], W_cond=Wc1, EmaxSwet=Emax_con1*Swet_cond[i]) +
-                                            Wrad(scenarioName["isVSactive_con2"][i], W_cond=Wc2, EmaxSwet=Emax_con2*Swet_cond[i]) +
-                                            Wr1 + Wr2 +
+            scenarioName["WTQ_rad"][i] = ( Wrad(scenarioName["isVSactive_con1"][i], W_cond=Wc1, EmaxSwet=Emax_con1*Swet_cond_1[i]) +
+                                            Wrad(scenarioName["isVSactive_con2"][i], W_cond=Wc2, EmaxSwet=Emax_con2*Swet_cond_2[i]) +
                                             C_rad[i]*Wth*RPF[i])
             # After computing radiation I now compute conducted loads with VS, now considering peaking factors: 
             # asymmetries in the plasma column (e.g. nonaxisymmetric VDE) may cause nonaxisymmetric loads
-            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1*TPF[i], Swetted=Swet_cond[i])
-            (tvs_con2,Emax_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2*TPF[i], Swetted=Swet_cond[i])
-            scenarioName["WTQ_con1"][i]  = Emax_con1 * Swet_cond[i]
-            scenarioName["WTQ_con2"][i]  = Emax_con2 * Swet_cond[i]
+            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1*TPF[i], Swetted=Swet_cond_1[i])
+            (tvs_con2,Emax_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2*TPF[i], Swetted=Swet_cond_2[i])
+            scenarioName["WTQ_con1"][i]  = Emax_con1 * Swet_cond_1[i]
+            scenarioName["WTQ_con2"][i]  = Emax_con2 * Swet_cond_2[i]
+        scenarioName["S_wet_cond_TQ1"] = Swet_cond_1
+        scenarioName["S_wet_cond_TQ2"] = Swet_cond_2
 
     if (phase=="CQ"): 
         C_cond  = C_cond_CQ         # [ 1.0 , 1.0 , 1.0 , 0.7 , 1.0 , 0.7 , 0.2 , 0.2  ]
@@ -626,27 +656,29 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             # I compute radiation from VS without considering peaking factors: 
             # this way I should have a better approximation, since peaks should average out with troughs
             # --> Final radiation load is the sum of {VS radiation} & {plasma emitted * RPF}
-            Wr = 0
             scenarioName["WthCQ"]     = Wpol(scenarioName)
             scenarioName["WlossCQ"][i]= Wpol(scenarioName) - Wcoupled(scenarioName,lin_exp=1,VDE=VDEs[i])[i]
             scenarioName["WcoupCQ"][i]= Wcoupled(scenarioName,lin_exp=1,VDE=VDEs[i])[i]
-            Wc,Wr = SOL(scenarioName=scenarioName, Wcond=C_cond[i]*scenarioName["WlossCQ"][i])
+            Wc = scenarioName["WlossCQ"][i] * C_cond_CQ[i]
+
+            if i in (0,1,6):
+                Swet_cond_1[i] = SOL(scenarioName=scenarioName, Psep=Wc/tau[i])
 
             print("CQ: {i}) W_cond = {Wc:.2f}".format(i=i,Wc=Wc))
 
             (tvs_con1,Emax_con1,isVS) = Emax1(scenarioName, time=tau[i], Wplasma=Wc, 
-                                              Swetted=Swet_cond[i], flagVSactive=True)
+                                              Swetted=Swet_cond_1[i], flagVSactive=True)
             scenarioName["tvs_CQ_con"][i] = tvs_con1
             scenarioName["isVSactive_CQ"][i] = isVS
             scenarioName["WCQ_rad"][i]  = ( Wrad(scenarioName["isVSactive_CQ"][i], W_cond=Wc, 
-                                                 EmaxSwet=Emax_con1*Swet_cond[i]) +
-                                            Wr +
+                                                 EmaxSwet=Emax_con1*Swet_cond_1[i]) +
                                             C_rad[i]*scenarioName["WlossCQ"][i]*RPF[i])
             # After computing radiation I now compute conducted loads with VS, now considering peaking factors: 
             # asymmetries in the plasma column (e.g. nonaxisymmetric VDE) may cause nonaxisymmetric loads
-            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=Wc*TPF[i], Swetted=Swet_cond[i])
+            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=Wc*TPF[i], Swetted=Swet_cond_1[i])
             # (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=C_cond[i]*scenarioName["WlossCQ"][i]*TPF[i], Swetted=Swet_cond[i])
-            scenarioName["WCQ_con"][i] = Emax_con1 * Swet_cond[i]
+            scenarioName["WCQ_con"][i] = Emax_con1 * Swet_cond_1[i]
+        scenarioName["S_wet_cond_CQ"] = Swet_cond_1
             
 def RMSE(scenarioName):
     A = deepcopy(SCENARIO)

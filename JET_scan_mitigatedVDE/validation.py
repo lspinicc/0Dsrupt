@@ -39,6 +39,7 @@ def validation(scenario) :
     print("Wrad [MJ]:        {W:10.5f}    [min,max]=[{min:8.5f}, {max:8.5f}]".format(W=Wrad/1e6,   
                                                                                      min=float((1-d_Wrad)*1e-6*Wrad),   
                                                                                      max=float((1+d_Wrad)*1e-6*Wrad)))
+    #print("Wcoupled:         {W:10.5f}    [min,max]=[]".format(W=scenario["WcoupCQ"]))
     print("qmelt TQ [MW/m2]: {q:10.5f}    with Berillium (walls)".format(q=qcrit_Be/1e6))
     print("qmelt TQ [MW/m2]: {q:10.5f}    with Tungsten (divertor)".format(q=qcrit_W/1e6))
     print("qmelt CQ [MW/m2]: {q:10.5f}    with Berillium (walls)".format(q=qcrit_Be_CQ/1e6))
