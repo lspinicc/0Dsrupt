@@ -46,6 +46,141 @@ def toSubscript(text):
 
     return str(text).translate(translation)
 
+def read_excel_file(filename):
+    """
+    Reads the workbook using the following sequence:
+
+    1. Try reading the original file directly.
+    2. Try copying the saved file to a temporary location.
+    3. Ask the running Excel application to create a snapshot.
+
+    The aim of this passage is that the input file is still readable even if kept open.
+
+        Inputs:
+          - filename:   name of the Excel file to be read.
+    
+    """
+    path = Path(filename).expanduser().resolve()
+
+    if not path.exists():
+        raise FileNotFoundError(f"Excel file not found: {path}")
+
+    # First attempt: read the original workbook normally.
+    try:
+        return pd.read_excel(path, engine="openpyxl")
+
+    except (PermissionError, OSError):
+        pass
+
+    with TemporaryDirectory() as temporary_directory:
+        temporary_path = (
+            Path(temporary_directory)
+            / f"{path.stem}_snapshot{path.suffix}"
+        )
+
+        # Second attempt: copy the last saved version of the workbook.
+        try:
+            shutil.copy2(path, temporary_path)
+
+        except (PermissionError, OSError):
+            # Third attempt: ask Excel to create the copy.
+            try:
+                import win32com.client
+            except ImportError as error:
+                raise PermissionError(
+                    f"The workbook is locked by Excel:\n{path}\n\n"
+                    "Install pywin32 to read a snapshot of an open workbook:\n"
+                    "    pip install pywin32"
+                ) from error
+
+            try:
+                excel = win32com.client.GetActiveObject(
+                    "Excel.Application"
+                )
+            except Exception as error:
+                raise PermissionError(
+                    f"The workbook is locked, but no running Excel "
+                    f"application could be accessed:\n{path}"
+                ) from error
+
+            workbook = None
+
+            # Look for the requested file among the workbooks open in Excel.
+            for candidate in excel.Workbooks:
+                candidate_path = Path(candidate.FullName).resolve()
+
+                if os.path.normcase(str(candidate_path)) == os.path.normcase(
+                    str(path)
+                ):
+                    workbook = candidate
+                    break
+
+            if workbook is None:
+                raise PermissionError(
+                    f"The workbook could not be read directly and was not "
+                    f"found in the detected Excel instance:\n{path}"
+                )
+
+            # SaveCopyAs creates a snapshot without closing or renaming
+            # the workbook that the user currently has open.
+            workbook.SaveCopyAs(str(temporary_path))
+
+        # Read either the filesystem copy or the Excel-created snapshot.
+        return pd.read_excel(
+            temporary_path,
+            engine="openpyxl"
+        )
+
+def col(colName):
+    """
+    Converts an Excel column name to a zero-based pandas column index.
+
+    Examples:
+        A  -> 0
+        D  -> 3
+        Z  -> 25
+        AA -> 26
+
+        Input:
+          - colName:    name of the column you read data from. Should be a string, like: 'A', 'B'...
+        
+        Output:
+          - colNumber:  corresponding number
+    """
+    colName = colName.strip().upper()
+
+    if not colName.isalpha():
+        raise ValueError(
+            f"Invalid Excel column name: {colName!r}"
+        )
+
+    column_number = 0
+
+    for char in colName:
+        column_number = (
+            column_number * 26
+            + ord(char)
+            - ord('A')
+            + 1
+        )
+
+    return column_number - 1
+
+def row(rowName):
+    """
+    Converts an Excel row number to a zero-based pandas row index.
+
+    This assumes that the first spreadsheet row is used as the
+    DataFrame header by pandas.
+
+        Input:
+          - rowName:    number identifying the row on the Excel file.
+        
+        Output:
+          - rowNumber:  corresponding matrix index.
+    """
+    return rowName - 2
+
 def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
     """
     Builds a scenario dictionary, shaped ater SCENARIO, automatically reading the data from the local copy of the input file spreadsheed
@@ -58,127 +193,7 @@ def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
             - scenarioOut:   new dictionary, shaped after SCENARIO, containing the new data reported on the input sreadsheet   
     """
 
-    path = Path(filename).expanduser().resolve()
-
-    if not path.exists():
-        raise FileNotFoundError(f"Excel file not found: {path}")
-
-    def read_excel_file():
-        """
-        Reads the workbook using the following sequence:
-
-        1. Try reading the original file directly.
-        2. Try copying the saved file to a temporary location.
-        3. Ask the running Excel application to create a snapshot.
-
-        The aim of this passage is that the input file is still readable even if kept open.
-        """
-
-        # First attempt: read the original workbook normally.
-        try:
-            return pd.read_excel(path, engine="openpyxl")
-
-        except (PermissionError, OSError):
-            pass
-
-        with TemporaryDirectory() as temporary_directory:
-            temporary_path = (
-                Path(temporary_directory)
-                / f"{path.stem}_snapshot{path.suffix}"
-            )
-
-            # Second attempt: copy the last saved version of the workbook.
-            try:
-                shutil.copy2(path, temporary_path)
-
-            except (PermissionError, OSError):
-                # Third attempt: ask Excel to create the copy.
-                try:
-                    import win32com.client
-                except ImportError as error:
-                    raise PermissionError(
-                        f"The workbook is locked by Excel:\n{path}\n\n"
-                        "Install pywin32 to read a snapshot of an open workbook:\n"
-                        "    pip install pywin32"
-                    ) from error
-
-                try:
-                    excel = win32com.client.GetActiveObject(
-                        "Excel.Application"
-                    )
-                except Exception as error:
-                    raise PermissionError(
-                        f"The workbook is locked, but no running Excel "
-                        f"application could be accessed:\n{path}"
-                    ) from error
-
-                workbook = None
-
-                # Look for the requested file among the workbooks open in Excel.
-                for candidate in excel.Workbooks:
-                    candidate_path = Path(candidate.FullName).resolve()
-
-                    if os.path.normcase(str(candidate_path)) == os.path.normcase(
-                        str(path)
-                    ):
-                        workbook = candidate
-                        break
-
-                if workbook is None:
-                    raise PermissionError(
-                        f"The workbook could not be read directly and was not "
-                        f"found in the detected Excel instance:\n{path}"
-                    )
-
-                # SaveCopyAs creates a snapshot without closing or renaming
-                # the workbook that the user currently has open.
-                workbook.SaveCopyAs(str(temporary_path))
-
-            # Read either the filesystem copy or the Excel-created snapshot.
-            return pd.read_excel(
-                temporary_path,
-                engine="openpyxl"
-            )
-
-    file = read_excel_file()
-
-    def col(colName):
-        """
-        Converts an Excel column name to a zero-based pandas column index.
-
-        Examples:
-            A  -> 0
-            D  -> 3
-            Z  -> 25
-            AA -> 26
-        """
-        colName = colName.strip().upper()
-
-        if not colName.isalpha():
-            raise ValueError(
-                f"Invalid Excel column name: {colName!r}"
-            )
-
-        column_number = 0
-
-        for char in colName:
-            column_number = (
-                column_number * 26
-                + ord(char)
-                - ord('A')
-                + 1
-            )
-
-        return column_number - 1
-
-    def row(rowName):
-        """
-        Converts an Excel row number to a zero-based pandas row index.
-
-        This assumes that the first spreadsheet row is used as the
-        DataFrame header by pandas.
-        """
-        return rowName - 2
+    file = read_excel_file(filename)
 
     # A shallow copy preserves the behaviour of your original function.
     scenarioOut = deepcopy(SCENARIO)
@@ -216,6 +231,33 @@ def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
 
     return scenarioOut
 
+def readGeneric(variables,positions,cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
+    """
+    Builds a scenario dictionary, shaped ater SCENARIO, automatically reading the data from the local copy of the input file spreadsheed
+
+        Input:
+            - cc:            corresponding column on Francis's spreadsheet, according to Excel nomenclature: 'A','B'...'Z','AA','AB'
+            - scenarioLabel: name of the dictionary containing the new scenario, if not specified it is read from the input file.
+
+        Output:
+            - scenarioOut:   new dictionary, shaped after SCENARIO, containing the new data reported on the input sreadsheet   
+    """
+
+    file = read_excel_file(filename)
+
+    # A shallow copy preserves the behaviour of your original function.
+    scenarioOut = deepcopy(SCENARIO)
+
+    if scenarioLabel is not None:
+        scenarioOut["name"] = scenarioLabel
+    else:
+        scenarioOut["name"] = str(file.iloc[row(2), col(cc)])
+
+    for v,p in zip(variables,positions):
+        scenarioOut[v]   = file.iloc[row(p),  col(cc)]
+
+    return scenarioOut
+
 def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
     """
     Writes the entries of a scenario dictionary to an Excel workbook.
@@ -244,18 +286,18 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
                       "Radiated ","W "+toSubscript("th")+" [MJ]",   "SOL ","width [mm]",    
                       "Radiation ","peak tor/pol"]
 
-    ColumnNames_TQ = ["Rise time on ","target [ms]",                "Fall time on"," target [ms]", 
-                      "Rise phase","tᵥₛ [ms]",                      "Fall phase","tᵥₛ [ms]",
+    ColumnNames_TQ = ["slow-TQ","duration [ms]",                   "fast-TQ"," duration [ms]", 
+                      "Slow phase","tᵥₛ [ms]",                      "Fast phase","tᵥₛ [ms]",
                       "Conducted ","W "+toSubscript("loss")+" [MJ]","Radiated ","W "+toSubscript("loss")+" [MJ]",
                       "Conducted ","Wpꜰᴄ [MJ]",                     "Radiated ","Wpꜰᴄ [MJ]",
                       "SOL ","width [mm]",                          "Radiation ","peak tor/pol"]
 
     ColumnNames_CQ = ["Duration ","(linear) [ms]",                  "Time const. ","(exp.) [ms]",
-                      "Conducted","tᵥₛ [ms]",                        "Conducted ","W "+toSubscript("loss")+" [MJ]",
-                      "Coupled","W"+toSubscript("c")+" [MJ]",
+                      "Conducted","tᵥₛ [ms]",                        "Magnetic" ,"W"+toSubscript("pol")+" [MJ]",
+                      "Coupled","W"+toSubscript("c")+" [MJ]",       "Conducted ","W "+toSubscript("loss")+" [MJ]",
                       "Radiated","W"+toSubscript("loss")+" [MJ]",   "Conducted ","Wpꜰᴄ [MJ]",
                       "Radiated ","Wpꜰᴄ [MJ]",                      "SOL width","[mm]",              
-                      "TPF/HCF"," ",                                "Radiation peak"," tor/pol"]
+                      "TPF    "," ",                                "Radiation peak"," tor/pol"]
 
     startCell="A1"
 
@@ -379,7 +421,7 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
         value=["{tpTQ:.2f}±16%".format(tpTQ=scenarioName["tauPreTQ"][0]), "τ"+toSubscript("e")+" L-mode", 
                scenarioName["Wth"]/2e6, "(0.5×Wₜₕ)", 
                0.00, " " , 
-               "{Eich:.2f}/{Goldson:.2f}".format(Eich=lambdaEich(scenarioName)*1e3,Goldson=lambdaMHD(scenarioName)*1e3) , "Eich/HD", 
+               "{lam:.2f}±{err:2.0f}%".format(lam=scenarioName["lamPreTQ"]*1e3,err=errors["lamPreTQ"]*1e2) , " ", 
                "", ""][i]
     ) for i in range(L)]
 
@@ -404,7 +446,7 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
             "Vertical",     "motion",
             scenarioName["Wth"]/2e6, "(0.5×Wₜₕ)", 
             0.00, " " , 
-            "{Eich:.2f}/{Goldson:.2f}".format(Eich=lambdaEich(scenarioName)*1e3,Goldson=lambdaMHD(scenarioName)*1e3) , "Eich/HD", 
+               "{lam:.2f}±{err:2.0f}%".format(lam=scenarioName["lamPreTQ"]*1e3,err=errors["lamPreTQ"]*1e2) , " ", 
             " ", " "][i]
     ) for i in range(L)] for j in (0,1)]
 
@@ -420,8 +462,8 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
         value=["{tpTQ:.2f}±30%".format(tpTQ=scenarioName["tauPreTQ"][7]), "(0.6 a q"+toSubscript("95")+")", 
                0.00, " " , 
                scenarioName["Wth"]/5e6, "(0.2×Wₜₕ)", 
-               "{Eich:.2f}/{Goldson:.2f}".format(Eich=lambdaEich(scenarioName)*1e3,Goldson=lambdaMHD(scenarioName)*1e3) , "Eich/HD", 
-               "2.0/0.2", ""][i]
+               "{lam:.2f}±{err:2.0f}%".format(lam=scenarioName["lamPreTQ"]*1e3,err=errors["lamPreTQ"]*1e2) , " ", 
+               "2.0/2.0", ""][i]
     ) for i in range(L)] for j in range(2)]
 
     for j in range(2):
@@ -458,23 +500,23 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 1,
             column= startColumn + 1 + j,
-            value = "{tauTQ:.2f}±{err:d}%".format(tauTQ=scenarioName["tauTQ"][j]*1e3,err=int(errors["tauTQ"][j]*100))
+            value = "{tauTQ:.2f}±{err:d}%".format(tauTQ=scenarioName["tauTQ1"][j]*1e3,err=int(errors["tauTQ1"][j]*100))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 2,
             column= startColumn + 1 + j,
-            value = "30% loss"
+            value = "70% loss"
         ) for j in range(len(disruptions))],
         # Fall phase duration
         [worksheet.cell(
             row   = startRow + 3,
             column= startColumn + 1 + j,
-            value = "{tauTQ:.2f}±{err}%".format(tauTQ=3*scenarioName["tauTQ"][j]*1e3,err=int(errors["tauTQ"][j]*1e2))
+            value = "{tauTQ:.2f}±{err}%".format(tauTQ=scenarioName["tauTQ2"][j]*1e3,err=int(errors["tauTQ2"][j]*1e2))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 4,
             column= startColumn + 1 + j,
-            value = "70% loss"
+            value = "30% loss"
         ) for j in range(len(disruptions))],
         # VS activation threshold time - Rise phase
         [worksheet.cell(
@@ -529,7 +571,7 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 14,
             column= startColumn + 1 + j,
-            value =  ["(finite λq)","VS effect"][int(scenarioName["isVSactive_con1"][j])]
+            value = "VS effect" if scenarioName["isVSactive_con1"][j] or scenarioName["isVSactive_con2"][j] else " "
         ) for j in range(len(disruptions))],
         # Radiated W_PFC deposited on walls
         [worksheet.cell(
@@ -540,24 +582,25 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
         [worksheet.cell(
             row   = startRow + 16,
             column= startColumn + 1 + j,
-            value = ["({C:.2f}×Wₜₕ)".format(C=C_rad[j]),"VS effect"][int(scenarioName["isVSactive_con1"][j])]
+        #    value = ["({C:.2f}×Wₜₕ)".format(C=C_rad[j]),"VS effect"][int(scenarioName["isVSactive_con1"][j])]
+            value = "VS effect" if scenarioName["isVSactive_con1"][j] or scenarioName["isVSactive_con2"][j] else "({C:.2f}×Wₜₕ)".format(C=C_rad[j])
         ) for j in range(len(disruptions))],
         # SOL width
         [worksheet.cell(
             row   = startRow + 17,
             column= startColumn + 1 + j,
-            value = "{Eich:.2f}/{Gold:.2f}".format(Eich=scenarioName["lamEich"]*1e3,Gold=scenarioName["lamGoldston"]*1e3)
+            value = "{lam:.2f}±{err:2.0f}%".format(lam=scenarioName["lamTQCQ"]*1e3,err=errors["lamTQCQ"]*1e2) 
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 18,
             column= startColumn + 1 + j,
-            value = "Eich/HD"
+            value = "~ x7 expans."
         ) for j in range(len(disruptions))],
         # Radiation Peaking
         [worksheet.cell(
             row   = startRow + 19,
             column= startColumn + 1 + j,
-            value = "2.0/0.2"
+            value = ("2.0" if j<6 else "1.0") 
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 20,
@@ -586,7 +629,6 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
     C_cond  = [ 1.0 , 1.0 , 1.0 , 0.7 , 1.0 , 0.7 , 0.2 , 0.2  ]
     C_rad   = [ 0.0 , 0.0 , 0.0 , 0.3 , 0.0 , 0.3 , 0.8 , 0.8  ]
     Ctq     = [ 1.4 , 0.7 , 0.7 , 3.0 , 0.7 , 3.0 , 0.5 , 0.5  ]
-    HCF     = [0.075, 0.075, 0.12, 0.2, 0.12, 0.2 , 0.05, 0.1  ]  
     TPF     = [ 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 1.0 , 1.0  ]   
     errorWCQ= ["±10%", "±10%", "±10%", "±22%", "±10%", "±22%", "±22%", "±22%"]         
 
@@ -635,98 +677,109 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
             column= startColumn + 1 + j,
             value = ["No VS","VS active"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
-        # Coupled magnetic energy W_coup
+        # CQ magnetic energy total      
         [worksheet.cell(
             row   = startRow + 7,
             column= startColumn + 1 + j,
-            value = "{Wc:.1f}±{err:d}%".format(Wc=scenarioName["WcoupCQ"][j]*1e-6*C_cond[j],err=int(errors["WcoupCQ"][j]*1e2))
+            value = "{Wc:.1f}±{err:d}%".format(Wc=scenarioName["WthCQ"]*1e-6,err=int(errors["WthCQ"]*1e2))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 8,
             column= startColumn + 1 + j,
-            value = " "
+            value = "(Wₚ)"
+        ) for j in range(len(disruptions))],
+        # Coupled magnetic energy W_coup
+        [worksheet.cell(
+            row   = startRow + 9,
+            column= startColumn + 1 + j,
+            value = "{Wc:.1f}±{err:d}%".format(Wc=scenarioName["WcoupCQ"][j]*1e-6,err=int(errors["WcoupCQ"][j]*1e2))
+        ) for j in range(len(disruptions))],
+        [worksheet.cell(
+            row   = startRow + 10,
+            column= startColumn + 1 + j,
+            value = "(W꜀)"
         ) for j in range(len(disruptions))],
         # Conducted W_loss from plasma
         [worksheet.cell(
-            row   = startRow + 9,
+            row   = startRow + 11,
             column= startColumn + 1 + j,
             value = "{Wc:.1f}±{err:d}%".format(Wc=scenarioName["WlossCQ"][j]*1e-6*C_cond[j],err=int(errors["WlossCQ"][j]*1e2))
         ) for j in range(len(disruptions))],
         [worksheet.cell(
-            row   = startRow + 10,
+            row   = startRow + 12,
             column= startColumn + 1 + j,
             value = "{C:.1f}(Wₚ-W꜀)".format(C=C_cond[j])
         ) for j in range(len(disruptions))],
         # Radiated W_loss from plasma
         [worksheet.cell(
-            row   = startRow + 11,
+            row   = startRow + 13,
             column= startColumn + 1 + j,
             value = "{Wc:.1f}".format(Wc=scenarioName["WlossCQ"][j]*1e-6*C_rad[j])+errorWCQ[j]
         ) for j in range(len(disruptions))],
         [worksheet.cell(
-            row   = startRow + 12,
+            row   = startRow + 14,
             column= startColumn + 1 + j,
             value = "{C:.1f}(Wₚ-W꜀)".format(C=C_rad[j])
         ) for j in range(len(disruptions))],
         # Conducted W_PFC from plasma 
         [worksheet.cell(
-            row   = startRow + 13,
-            column= startColumn + 1 + j,
-            value = "{Wc:.1f}".format(Wc=scenarioName["WCQ_con"][j]*1e-6) + [errorWCQ[j] , "±30%"][int(scenarioName["isVSactive_CQ"][j])]
-        ) for j in range(len(disruptions))],
-        [worksheet.cell(
-            row   = startRow + 14,
-            column= startColumn + 1 + j,
-            value = [" ", "VS effect"][int(scenarioName["isVSactive_CQ"][j])]
-        ) for j in range(len(disruptions))],
-        # Radiated W_PFC from plasma 
-        [worksheet.cell(
             row   = startRow + 15,
             column= startColumn + 1 + j,
-            value = "{Wr:.1f}".format(Wr=scenarioName["WCQ_rad"][j]*1e-6) + errorWCQ[j]
+            value = "{Wc:.1f}".format(Wc=scenarioName["WCQ_con"][j]*1e-6) + [errorWCQ[j] , "±30%"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 16,
             column= startColumn + 1 + j,
             value = [" ", "VS effect"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
-        # SOL width
+        # Radiated W_PFC from plasma 
         [worksheet.cell(
             row   = startRow + 17,
             column= startColumn + 1 + j,
-            value = "{Eich:.2f}/{Gold:.2f}".format(Eich=scenarioName["lamEich"]*1e3,Gold=scenarioName["lamGoldston"]*1e3)
+            value = "{Wr:.1f}".format(Wr=scenarioName["WCQ_rad"][j]*1e-6) + errorWCQ[j]
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 18,
             column= startColumn + 1 + j,
-            value = "Eich/HD"
+            value = [" ", "VS effect"][int(scenarioName["isVSactive_CQ"][j])]
         ) for j in range(len(disruptions))],
-        # TPF & HCF
+        # SOL width
         [worksheet.cell(
             row   = startRow + 19,
             column= startColumn + 1 + j,
-            value = "{TPF:.1f}/{HCF:.3f}".format(TPF=TPF[j], HCF=HCF[j])
+            value = "{lam:.2f}±{err:.2f}%".format(lam=scenarioName["lamTQCQ"]*1e3,err=errors["lamTQCQ"]*1e2)
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 20,
             column= startColumn + 1 + j,
             value = " "
         ) for j in range(len(disruptions))],
-        # Radiation Peaking
+        # TPF & HCF
         [worksheet.cell(
             row   = startRow + 21,
             column= startColumn + 1 + j,
-            value = "2.0/0.2"
+            value = "{TPF:.1f}".format(TPF=TPF[j])
         ) for j in range(len(disruptions))],
         [worksheet.cell(
             row   = startRow + 22,
             column= startColumn + 1 + j,
             value = " "
         ) for j in range(len(disruptions))],
+        # Radiation Peaking
+        [worksheet.cell(
+            row   = startRow + 23,
+            column= startColumn + 1 + j,
+            value = "2.0/2.0"
+        ) for j in range(len(disruptions))],
+        [worksheet.cell(
+            row   = startRow + 24,
+            column= startColumn + 1 + j,
+            value = " "
+        ) for j in range(len(disruptions))],
         ]
 
     for j in range(len(disruptions)):
-        for i in (6,7,8,9,10,11):
+        for i in (6,7,8,9,10,11,12,13):
             TableCQ[i][j].fill=ShadedFill
         for i in range(len(TableCQ)):
             TableCQ[i][j].border=borders[i%2]
@@ -738,7 +791,20 @@ def writeToXls(scenarioName, errors, filename=None, overwriteSheet=True):
         column = startColumn + 10
     )
 
+    WARNING2 = worksheet.cell(
+        value  = "Reminder: W_PFC already contains peaking factors.",
+        row    = startRow + 15,
+        column = startColumn + 10
+    )
+
+    WARNING3 = worksheet.cell(
+        value  = "If VS is only activated at peak loads position, no radiation is considered. VS radiation computed from toroidal average cond. loads.",
+        row    = startRow + 16,
+        column = startColumn + 10
+    )
+
     WARNING.font = WarningFont
+    WARNING2.font= WarningFont
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # SAVE OUTPUT FILE

@@ -9,9 +9,9 @@ from InputOutput import readFromXls, writeToXls
 
 def validation(scenario) :
 
-    tau_cool   = DTcool(scenarioName=scenario) + tauTQ(scenarioName=scenario)
+    tau_cool   = DTcool(scenarioName=scenario) + tauTQ(scenarioName=scenario) + 2.5*scenario["a"]**1.5
     tau_CQ_min = tauCQlinmin(scenarioName=scenario,mitigatedVDE=1)
-    tau_CQ_ave = tauCQlinmin(scenarioName=scenario,mitigatedVDE=1,longCQ=1)
+    tau_CQ_ave = tauCQlinmin(scenarioName=scenario,longCQ=1)
     qcrit_Be   = qmelt(tauTQ(scenarioName=scenario),material="Be")
     qcrit_W    = qmelt(tauTQ(scenarioName=scenario),material="W")
     qcrit_Be_CQ= qmelt(tau_CQ_ave,material="Be")
@@ -19,7 +19,7 @@ def validation(scenario) :
 
     scenario["tauCQ"] = tau_CQ_ave
     scenario["WthCQ"] = Wpol(scenarioName=scenario)
-    scenario["WcoupCQ"] = Wcoupled(scenarioName=scenario,lin_exp=0)*np.ones(8)
+    scenario["WcoupCQ"] = Wcoupled(scenarioName=scenario,lin_exp=0,rescale_a=1.1)*np.ones(8)
     scenario["WlossCQ"] = scenario["WthCQ"] - scenario["WcoupCQ"]
 
     Wrad       = scenario["Wth"] * (0.2 + 0.8**2) + scenario["WlossCQ"][0]*0.8
