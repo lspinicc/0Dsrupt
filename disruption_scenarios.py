@@ -52,29 +52,58 @@ SCENARIO = {
     # OUTPUTS
     #
     "tauPreTQ" : np.zeros(8),
-    "tauTQ" : np.zeros(8),
+    "tvs_preTQ": np.zeros(8),
+    "isVSactive_PreTQ": np.zeros(8),
+    "WpreTQ_rad": np.zeros(8),
+    "WpreTQ_con": np.zeros(8),
+    "tvs_preTQ_baffle": np.zeros(8),
+    "isVSactive_PreTQ_baffle": np.zeros(8),
+    "WpreTQ_rad_baffle": np.zeros(8),
+    "WpreTQ_con_baffle": np.zeros(8),
+    "tauTQ1" : np.zeros(8),
+    "tauTQ2" : np.zeros(8),
     "tauCQ" : np.zeros(8),
     "WTQ_con1" : np.zeros(8),
     "WTQ_con2" : np.zeros(8),
+    "WTQ_1step_con" : np.zeros(8),
+    "WTQ_con1_baffle" : np.zeros(8),
+    "WTQ_con2_baffle" : np.zeros(8),
+    "WTQ_1step_con_baffle" : np.zeros(8),
     "WTQ_rad" : np.zeros(8),
+    "WTQ_1step_rad" : np.zeros(8),
     "tvs_TQ_con1" : np.zeros(8),
     "tvs_TQ_con2" : np.zeros(8),
+    "tvs_TQ_1step" : np.zeros(8),
     "tvs_TQ_rad" : np.zeros(8),
     "isVSactive_con1" : np.zeros(8),
     "isVSactive_con2" : np.zeros(8),
+    "isVSactive_1step" : np.zeros(8),
+    "isVSactive_con1_baffle" : np.zeros(8),
+    "isVSactive_con2_baffle" : np.zeros(8),
+    "isVSactive_1step_baffle" : np.zeros(8),
     # "WthTQ2"   : np.zeros(8),
     # "WthTQrad" : np.zeros(8),
     "WCQ_con"  : np.zeros(8),
     "WCQ_rad"  : np.zeros(8),
+    "WCQ_con_baffle" : np.zeros(8),
     "WlossCQ"  : np.zeros(8),
     "WcoupCQ"  : np.zeros(8),
     "tvs_CQ_con" : np.zeros(8),
     "tvs_CQ_rad" : np.zeros(8),
     "isVSactive_CQ" : np.zeros(8),
+    "isVSactive_CQ_baffle": np.zeros(8),
     # "Wpol_c"   : np.zeros(8),
     # "Wpol_r"   : np.zeros(8),
     "lamEich"  : 0,
-    "lamGoldston": 0
+    "lamGoldston": 0,
+    "lamPreTQ": 0,
+    "lamTQCQ" : 0,
+    "lamGoldston_TQ1": np.zeros(8),
+    "lamGoldston_TQ2": np.zeros(8),
+    "lamGoldston_CQ" : np.zeros(8),
+    "S_wet_cond_TQ1": np.zeros(8),
+    "S_wet_cond_TQ2": np.zeros(8),
+    "S_wet_cond_CQ": np.zeros(8)
 }
 
 def readFromXls(cc='D',scenarioLabel=None,filename="Inputs_template.xlsx"):
@@ -253,14 +282,29 @@ def tauCQlinmin(scenarioName, linexp="lin", mitigatedVDE=0, MDlikely=0, longCQ=0
     """
     SLstar = scenarioName["Csect"] * (
 #                np.log(scenarioName["B0"] * scenarioName["R0"] / scenarioName["a"]) + scenarioName["li3"] / 2 - 2)
-#                np.log(8 * scenarioName["R0"] / scenarioName["a"]) + 0.5 / 2 - 2)
-                ExternalInductance(scenarioName["a"],scenarioName["R0"],scenarioName["kappa"])/(mu0*scenarioName["R0"]) + 0.5 / 2 )
+                np.log(8 * scenarioName["R0"] / scenarioName["a"]) + 0.5 / 2 - 2)
+#                ExternalInductance(scenarioName["a"],scenarioName["R0"],scenarioName["kappa"])/(mu0*scenarioName["R0"]) + 0.5 / 2 )
     tauCQ = 0.7*SLstar
     if (mitigatedVDE): tauCQ = SLstar/2
     if (MDlikely): tauCQ = SLstar*1.4
     if (longCQ): tauCQ = 3*SLstar#scenarioName["longCQtime"]#*scenarioName["a"]/SPR045["a"]
     if (linexp == "exp"): tauCQ *= 0.6 / np.log(4)
     return tauCQ * 1e-3    # [seconds]
+
+def Bpol(scenarioName):
+    """
+    Returns an estimate for the poloidal magnetic field at outer / inner mid plane.
+
+    Inputs:
+      - scenarioName:   dictionary type plasma flattop scenario.
+    
+    Outputs:
+      - Bpol:           poloidal magnetic field at outer / inner mid plane.
+    """
+
+    Bpol = mu0 * scenarioName["Ip"] / (2 * np.pi * scenarioName["a"] * np.sqrt((1 + scenarioName["kappa"] ** 2) / 2))
+
+    return Bpol
 
 def qCyl(scenarioName):
     """
@@ -278,8 +322,7 @@ def qCyl(scenarioName):
     R0 = scenarioName["R0"]
     #
     #    return a**2 * B0 * (1+kappa**2) / ( R0 * Ip * 4e-7 )
-    Bpol = mu0 * Ip / (2 * np.pi * a * np.sqrt((1 + kappa ** 2) / 2))
-    return a * B0 * np.sqrt((1 + kappa ** 2) / 2) / (R0 * Bpol)
+    return a * B0 * np.sqrt((1 + kappa ** 2) / 2) / (R0 * Bpol(scenarioName))
 
 def lambdaEich(scenarioName):
     Ip = scenarioName["Ip"]
@@ -291,25 +334,48 @@ def lambdaEich(scenarioName):
     #    return a**2 * B0 * (1+kappa**2) / ( R0 * Ip * 4e-7 )
     Bpol = mu0 * Ip / (2 * np.pi * a * np.sqrt((1 + kappa ** 2) / 2))
 
-    return 0.63e-3 * Bpol**(-1.19)
+    return 0.63 * Bpol**(-1.19)
 
-def lambdaMHD(scenarioName,model='HD'):
+def lambdaMHD(scenarioName,model='HD',Psep=None,MHD_turbulence_on=True):
     """
-    Attempt to compute the power fall-off length using the formula provided by York University (Annex 1 in TD-0013190-B). 
-    Incomplete owing to lack of physical parameters.
+    Computes the power fall-off length using the formula provided by York University (Annex 1 in TD-0013190-B).
 
-    Still incomplete  ---> DO NOT USE!
+        Inputs:
+          - scenarioName:   dictionary type scenario.
+          - model:          set to 'HD' to compute λ_q with the Heuristic Drift formula + correction for ballooning turbulence (default).
+                            set to 'Eich' to compute λ_q with the Heuristic Drift formula + correction for ballooning turbulence.
+          - Psep:           Power crossing the separatrix. 
+                            (default value is the peak power through separatrix at equilibrium)  
+          - MHD_turbulence_on:  set to False if you don't want turbulence driven expansion of λq 
+
     """
     if (model == 'HD'):
         Z_average = 1  # charge imparity overall in the plasma: ne / Σ_s{ n_s }
+
+        if (Psep==None):
+            Psep = scenarioName["Psep"]  # if unpecified, use the peak Power through separatrix
 
         def kz(Zeff) : 
             return 0.672 + 0.076 * Zeff**0.5 + 0.252 * Zeff
 
         # result given in meters
-        lamHD = 5671 * ( ( scenarioName["Psep"] * 1.5 )**(1./8) * 1.5 * ( 2. / ( 1. + Z_average ) )**(7./16) 
-                         * ( 1 + scenarioName["kappa"]**2 )**(5./8) * scenarioName["a"]**(17/8) * scenarioName["B0"]**0.25 
-                         / ( scenarioName["Ip"]**(9./8) * scenarioName["R0"] ) ) * kz(scenarioName["Zeff"])**(1./8)
+        lamHD = 5671 * ( ( Psep * 1.5 )**(1./8)  
+                         * ( 1 + scenarioName["kappa"]**2 )**(5./8) 
+                         * scenarioName["a"]**(17/8) 
+                         * scenarioName["B0"]**0.25 
+                         * kz(scenarioName["Zeff"])**(1./8) 
+                         * ( 2. / ( 1. + Z_average ) )**(7./16)
+                         * 1.5
+                         / ( scenarioName["Ip"]**(9./8) * scenarioName["R0"] ) ) 
+
+        # lamHD = 5671 * ( ( Psep )**(1./8)  
+        #                  * ( 1 + scenarioName["kappa"]**2 )**(5./8) 
+        #                  * scenarioName["a"]**(17/8) 
+        #                  * scenarioName["B0"]**0.25 
+        #                  * ((scenarioName["Zeff"]+4)/5)**(1./8)
+        #                  * ( 2. / ( Z_average**2 + Z_average**3 ) )**(7./16)
+        #                  * 1.5
+        #                  / ( scenarioName["Ip"]**(9./8) * scenarioName["R0"] ) ) 
 
         λ = lamHD
     else:
@@ -322,21 +388,9 @@ def lambdaMHD(scenarioName,model='HD'):
 
     lamMHD = λ 
     # print('lambdaHD[{lamhd}],   alphaMHD[{amhd}]  >?  alphaCrit[{acrit}]'.format(lamhd=lamMHD,amhd=alphaMHD,acrit=alphaCrit))
-    if (alphaMHD > alphaCrit) :
+    if (alphaMHD > alphaCrit) and MHD_turbulence_on:
         lamMHD *= ( alphaMHD / alphaCrit )**(7./9)
     return lamMHD #[m]
-
-def lambdaMHD_rough(scenarioName):
-    """
-        Computation of the power fall-off length estimate from MHD using the rough scaling in the final equation of Annex 1 in TD-0013190-B.
-        This is a rescaling of an empirical value obtained for a previous device configuration (STEP500)
-
-            input:  name of a python dictionary relative to a scenario
-            output: lambda_{q,MHD}
-    """
-    #    return 1.18e-3 * (scenarioName["R0"]/1.8)**(7/9) * (2.15/2.76)**(14/9) * (scenarioName["B0"]/2.43)**(-14/9)
-    return 1.18e-3 * (scenarioName["R0"] / 1.8) ** (7 / 9) * (qCyl(scenarioName) / 2.76) ** (14 / 9) * (
-                scenarioName["B0"] / 2.43) ** (-14 / 9) * (scenarioName["p_sep"] / 2.13e3) ** (7./9)
 
 def Emax1(scenarioName,time,Wplasma,Swetted=1,flagVSactive=False):
     """
@@ -363,7 +417,7 @@ def Emax1(scenarioName,time,Wplasma,Swetted=1,flagVSactive=False):
     j0 = 1e33 #[ 1 / m^2 s ] (dN/dt = j0 * exp(-Eev / T))
 #    j0 = 8.167e34/np.sqrt(94670)
     Eev= 94670#[ K ]         (melting point of Tungsten)
-    
+
     def sigma(Te) :
         if (Te > 100):
             return 8.8e-13 / Te**1.71 - 1.62e-12 / Te**1.932
@@ -422,18 +476,18 @@ def Emax2(scenarioName,time,Swetted=1,material='Tungsten'):
 def tvs1_Swet(Swet):
     return Swet**2 / (1. + 0.05*np.log(Swet))**2 
 
-def qmelt(time, material="W"):
+def qmelt(time, material="W", T0=550 + 273.15):
     """
     Computes the critical heat flux for wall melting.
     General assumptions are:
       - wall treated as an infinite slab
       - no coolant action
-      - starting temperature is 550 Celsius
-      - material properties are independent of time / temperature
+      - material properties are independent of time / temperature (only change between solid and liquid phase)
 
         Inputs: 
           - time:       time duration of the transient
           - material:   "W" (default) --> if the wall is tungsten;   "Be" --> if the wall is Berillium
+          - T0:         initial temperature of the wall (default: 823.15 K).
 
         Outputs:
           - qmelt:      if q_impinging > qmelt  -->  the wall will melt
@@ -442,7 +496,7 @@ def qmelt(time, material="W"):
     k     = 170    # [W / m K]
     rho   = 19250  # [kg / m3]
     Tmelt = 3695   # [K]
-    T0    = 550 + 273.15
+    
     
     if (material=="Be"):
         Cp    = 1825   # [J / kg K]
@@ -451,6 +505,90 @@ def qmelt(time, material="W"):
         Tmelt = 1560   # [K]
 
     return (Tmelt-T0)*np.sqrt(np.pi*Cp*rho*k/time)/2  #[W / m2]
+
+def Tfinal(q0,time,Swet,T0,material="W",output_erosion=False, q_cooling=0):
+    """
+    Evaluates the temperature on walls during the disruption phases, 
+    using the semi-inifinite conductor approximation (Landau VI, chap. 5.2):
+        Inputs:
+          - q0:         constant heat flux
+          - time:       duration
+          - Swet:       wetted surface area
+          - T0:         initial surface temperature
+          - material:   wall material (default: "W", but takes also "Be")
+          - output_erosion: False (default) --> output = Tfinal
+                            True            --> output = np.array([ Tfinal , erosion ])
+          - q_cooling:  power ablation per unit surface, produced by active cooling
+        Output:
+          - Tfinal:     final temperature, after the transient
+          - erosion:    depth of target wall erosion (in metres). 
+
+    WARNING:    Tfinal may be higher than vapour point. Vapour condition not 
+                considered within this algorithm.
+    """
+
+    q0    = max(q0 - q_cooling , 0.0)
+
+    Cp    = 130    # [J / kg K]
+    k     = 170    # [W / m K]
+    rho   = 19250  # [kg / m3]
+    Tmelt = 3695   # [K]
+    Lf    = 190e3  # [ J / kg ]    (latent heat. See https://www.engineeringtoolbox.com/fusion-heat-metals-d_1266.html)
+
+    if material == "Be":
+        Cp    = 2352 #1825   # [J / kg K]
+        k     = 200    # [W / m K]
+        rho   = 1845   # [kg / m3]
+        Tmelt = 1560   # [K]
+        Lf    = 1356   #[ J / kg ]    (latent heat. See https://www.engineeringtoolbox.com/fusion-heat-metals-d_1266.html)
+
+    q_melt = qmelt(time=time,material=material,T0=T0)
+
+    if q0 < q_melt and T0 < Tmelt:
+        Tfinal = 2 * q0 * np.sqrt( time / (rho * Cp * k * np.pi) ) + T0
+        if output_erosion:
+            return Tfinal , 0.0
+        return Tfinal
+    
+    else:
+        # erosion depth (function of time):
+        dx = lambda t_melt : np.sqrt( ( 4 * (time - t_melt) * k ) / (Cp * rho) )
+
+        if T0 < Tmelt and q0 > q_melt:
+            # time at which the melting starts:
+            t_melt = k * np.pi * rho * Cp * ( (Tmelt - T0)/(2 * q0) )**2
+
+        elif not T0 < Tmelt:
+            t_melt   = 0
+            # print("case 3")
+            # print("T0:{T0} < Tmelt:{Tmelt}. Erosion: {dx}. time:{time} > tmelt:{t_melt}".format(T0=T0,Tmelt=Tmelt,dx=dx(t_melt),time=time,t_melt=t_melt))
+
+        # Considering 2 diffusion lengths: x = 2 * sqrt( 4 * time * k / (rho * Cp) )
+        # We assume the melting to be instantaneous (pessimistic)
+        erosion_depth = dx(t_melt)
+        print("Erosion:     {x:5.3f} mm".format(x=1e3*erosion_depth))
+
+        E_latent = Lf * Swet * rho * erosion_depth      # [J] = [j-kg] x [m2] x [kg/m3] x [m]
+
+        # Material properties for the liquid phase
+        if material == "W":
+            k  = 100  #[ W / m K ]   (heat conduction coefficient)
+            Cp = 250  #[ J / kg K ]  (heat capacity)
+            rho= 18e3 #[ kg / m^3 ]  (density)
+        if material == "Be":
+            Be_amu= 9.0122
+            proton_mass = 1.6726e-27
+            Avogadro    = 6.022e23
+            Cp    = (25.4345 + 2.15e-3*Tmelt) / (Be_amu*proton_mass*Avogadro*1e-3)   # [J / kg K]
+            k     = 200    # [W / m K]
+            rho   = 1690   # [kg / m3]
+
+        Tfinal =  max( 2 * ( q0 - E_latent/( Swet*(time-t_melt) ) ) * np.sqrt( (time-t_melt) / (rho * Cp * k * np.pi) ) 
+                       , 0.0 ) + Tmelt
+
+        if output_erosion:
+            return  Tfinal , erosion_depth 
+        return Tfinal 
 
 def Wpol(scenarioName,li3_betap="li3"):
     """
@@ -480,7 +618,7 @@ def Wpol(scenarioName,li3_betap="li3"):
     if (li3_betap == "betap"):
         return 2 * scenarioName["Wth"] / (3 * scenarioName["betap"]) * 1.1
 
-def Wcoupled(scenarioName,lin_exp=0,VDE=False):
+def Wcoupled(scenarioName,lin_exp=1,rescale_a=1):
     """
     Computes the coupled magnetic energy. Only induced currents by Ip drop are considered. 
     Induced currents coming from plasma motion are more scenario dependent and not considered to this point.
@@ -492,7 +630,7 @@ def Wcoupled(scenarioName,lin_exp=0,VDE=False):
         Outputs:
           - Wcoupled:          coupled magnetic energy during CQ
     """
-    L = ExternalInductance(a=scenarioName["a"]*1.1,R=scenarioName["R0"]*1.1,k=scenarioName["kappa"])
+    L = ExternalInductance(a=scenarioName["a"]*rescale_a,R=scenarioName["R0"],k=scenarioName["kappa"])
     # a_wall = scenarioName["a"] * (1+(scenarioName["kappa"]))/2
     # R_wall = scenarioName["R0"] 
     # k0= (4*a_wall*R_wall)**0.5 / (a_wall + R_wall)
@@ -504,49 +642,85 @@ def Wcoupled(scenarioName,lin_exp=0,VDE=False):
     Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / scenarioName["tauCQ"]  * ( 1 - np.exp(-scenarioName["tauCQ"]/scenarioName["tauW"]) ) )**2 / (2 * L)
     if lin_exp == 1:
         tauCQ = scenarioName["tauCQ"] * 0.6 / np.log(4) 
-        Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / (scenarioName["tauCQ"]-scenarioName["tauW"]) * ( np.exp(-1) - np.exp(-scenarioName["tauCQ"]/scenarioName["tauW"]) ) )**2 / (2 * L)
-
-    # if VDE:
-    #     Wcoupled += scenarioName["Ip"] * ( scenarioName["kappa"]*scenarioName["a"] / 10 )**2 * 2 * np.pi * scenarioName["R0"]
+        # Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / (scenarioName["tauCQ"]-scenarioName["tauW"]) * ( np.exp(-1) - np.exp(-scenarioName["tauCQ"]/scenarioName["tauW"]) ) )**2 / (2 * L)
+        Wcoupled = (scenarioName["Ip"] * M * scenarioName["tauW"] / (tauCQ-scenarioName["tauW"]) * ( np.exp(-1) - np.exp(-tauCQ/scenarioName["tauW"]) ) )**2 / (2 * L)
         
     return Wcoupled
 
-def SOL(scenarioName,Wcond,onDivertor=False):
-    λq      = scenarioName["lamEich"]#["lamGoldston"]#(scenarioName["lamEich"]*scenarioName["lamGoldston"])**0.5
-    grazing = np.sin(3*np.pi/180)
-    Rtarget = scenarioName["R0"] + scenarioName["a"]   
-    spreading = 1
-    f_target  = 1
+def SOL(scenarioName,Psep=None,alpha=3*np.pi/180,Ndiv=1):
+    """
+    Computes the wetted area surface on the divertor for MD cases and for a given scenario.
 
-    Wcond_through_SOL = Wcond / (4 * np.pi * Rtarget * λq)
+    Inputs:
+      - scenarioName:   dictionary type variable containing the initial peak-plasma scenario
+      - Psep:           Power crossing the separatrix at a given transient phase in a disruption. 
+                        (default: flat-top value).   
+      - alpha:          Grazing angle on the divertor plate. (default: 3 degrees).
+      - Ndiv:           Number of divertors invested by the load. (default: 1).
+    
+    Outputs:
+      - S:              wetted area on the divertor, assuming that λq = (λq{Goldston+MHD} + λq{Eich}) / 2
+    """
+    if Psep == None: Psep = scenarioName["Psep"]
 
-    if onDivertor:
-        Wcond_through_SOL *= grazing / spreading * f_target 
+    λq      = 0.5 * ( lambdaMHD(scenarioName=scenarioName,Psep=Psep,MHD_turbulence_on=False)
+                      + lambdaMHD(scenarioName=scenarioName,Psep=Psep,model="Eich",MHD_turbulence_on=False) ) * 7
+    grazing = np.sin(alpha)
 
-    # Wcond_through_SOL = Wcond
-    W_rad_from_SOL = Wcond - Wcond_through_SOL
+    # Sbaffle = 0
+    f_baffle= 0.3
 
-    # return ( Wcond_through_SOL , W_rad_from_SOL )
-    return (Wcond,0)
+    Bp_over_Bt = Bpol(scenarioName) / scenarioName["B0"]
 
-def W_PFC(scenarioName,phase,peakingFactors=0):
+    if (Ndiv == 1): f_leg_in = 0.3
+    if (Ndiv == 2): f_leg_in = 0.15
+    f_leg_out= 1 - f_leg_in
+
+    S = ( 2*np.pi*λq*Bp_over_Bt*Ndiv / (grazing * scenarioName["R0"]  * (1-f_baffle)
+                                         * (f_leg_in/(scenarioName["R0"]-scenarioName["a"])**2 
+                                            + f_leg_out/(scenarioName["R0"]+scenarioName["a"])**2) )
+    #      + Sbaffle * Ndiv / f_baffle
+        )
+
+    return S
+
+def W_PFC(scenarioName,phase,peakingFactors=0,Ndiv=1,singleCase=None,rescale_a=1,CQ_lin_exp=1):
     """
     Computes the heat loads on PFC, including Vapour Shielding action and Peaking Factors.
     
         Inputs:
             -  scenarioName:    name of the scenario you want the calculation to be made for
             -  phase:           can be either 'TQ' or 'CQ'
-            -  peakingFactors:  0 --> do not consider peaking factors    (effectively considers pow(peaking_factors,0))
+            -  peakingFactors:  0 --> do not consider peaking factors    
                                 1 --> considers the peaking factors listed on my report
-                                (do not set values different from 0 and 1!!!)
+                                (for TQ only radiation peaking factors considered; for CQ it is both conducted and radiated loads)
+            -  singleCase:      (default: None)
+                                set to an integer value from 0 to 7 to run a single specific disruption case
+                                    0 - MD likely       
+                                    1 - MD strong
+                                    2 - cold VDE fast CQ       
+                                    3 - cold VDE slow CQ
+                                    4 - hot VDE fast CQ    
+                                    5 - hot VDE slow CQ     
+                                    6 - mitigated MD
+                                    7 - mitigated VDE 
+            -  rescale_a:       in case the PFC L/R timescale is short w.r.t. tauCQ, a larger effective plasma region should
+                                be considered for CQ calculation of W_coupled, having: 
+                                            a = a_plasma * rescale_a
+                                (default value: 1).
+            -  CQ_lin_exp:      Current Quench current decay waveform:
+                                    0 - linear:         Ip(t) = Ip(peak) * (1 - t/tauCQ)    (unreliable results for now)
+                                    1 - exponential:    Ip(t) = Ip(peak) * exp(-t/tauCQ)    (default)
         Outputs:
             There is no real output, but the function overwrites in the scenario the fields reported below.
             IF (phase == 'TQ'):
-            -  scenarioName["tauTQ"]:           array of durations for tau1 (tau_{ramp-up}=tau1, tau_{ramp-down}=3*tau1)
+            -  scenarioName["tauTQ1"]:          array of durations for tau1 (tau_{ramp-up}=tau1, tau_{ramp-down}=tau2)
+            -  scenarioName["tauTQ2"]:          array of durations for tau2 (tau_{ramp-up}=tau1, tau_{ramp-down}=tau2)
             -  scenarioName["tvs_TQ_con1"]:     array of vapour shielding threshold times for TQ ramp-up
             -  scenarioName["tvs_TQ_con2"]:     array of vapour shielding threshold times for TQ ramp-down
-            -  scenarioName["WTQ_con1"]:        array of conducted loads on PFC for TQ ramp-up
-            -  scenarioName["WTQ_con2"]:        array of conducted loads on PFC for TQ ramp-down
+            -  scenarioName["WTQ_con1"]:        array of conducted loads on PFC for double-step TQ, 1st phase 
+            -  scenarioName["WTQ_con2"]:        array of conducted loads on PFC for double-step TQ, 1st phase
+            -  scenarioName["WTQ_1step_con"]:   array of conducted loads on PFC for single-step TQ
             -  scenarioName["WTQ_rad"]:         array of radiated loads on PFC for TQ ramp-up + ramp-down
 
             IF (phase == 'CQ'):
@@ -559,10 +733,13 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
     Sdiv = scenarioName["S_div"]
     S_FW = scenarioName["S_FW"]
     Scp = scenarioName["S_cp"]
-    Swet_cond   = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_1 = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
+    Swet_cond_2 = [ Sdiv, Sdiv, Scp,  Scp,  Scp,  Scp,  Sdiv, Scp  ]
     #Swet_rad    = [ Sdiv, Sdiv, S_FW, S_FW, S_FW, S_FW, Sdiv, S_FW ]
     Swet_rad    = [ S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW, S_FW ]
     disruptions = ["MD\nlikely","MD\nstrong","cold VDE\nfast CQ","cold VDE\nslow CQ","hot VDE\nfast CQ","hot VDE\nslow CQ","MD\nmitig.","VDE\nmitig."]
+
+    cases = range(8) if singleCase is None else [singleCase]
 
     def Wrad(isVS,W_cond,EmaxSwet):
     # If time = tau1, still the VS effect must be neglected...
@@ -572,83 +749,188 @@ def W_PFC(scenarioName,phase,peakingFactors=0):
             W_rad = 1e-20
         return W_rad
 
+    if (phase=="PreTQ"): 
+        C_cond  = [ 0.5 , 0.0 , 0.5 , 0.5 , 0.0 , 0.0 , 0.0 , 0.0 ]
+        C_rad   = [ 0.0 , 0.0 , 0.0 , 0.0 , 0.0 , 0.0 , 0.2 , 0.2 ]
+        Wth     = scenarioName["Wth"]
+        scenarioName["PreTQ"]  = np.array([tauE(scenarioName=scenarioName,mode='L'),
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           None,
+                                           DTcool(scenarioName=scenarioName),
+                                           DTcool(scenarioName=scenarioName)]) 
+        
+        for i in (0,6,7):
+            # I compute radiation from VS without considering peaking factors: 
+            # this way I should have a better approximation, since peaks should average out with troughs
+            # --> Final radiation load is the sum of {VS radiation (ramp-up + ramp down)} & {plasma emitted * RPF}
+            Wc = C_cond[i]*Wth
+
+            # scenarioName["lamGoldston_TQ1"][i] = lambdaMHD(scenarioName=scenarioName,Psep=Wc1/scenarioName["tauTQ1"][i])
+            # scenarioName["lamGoldston_TQ2"][i] = lambdaMHD(scenarioName=scenarioName,Psep=Wc2/scenarioName["tauTQ2"][i])
+
+            if i in (0,6):
+                Swet_cond_1[i] = SOL( scenarioName=scenarioName , Ndiv=Ndiv )
+
+            # print("TQ: {i}) W_cond(1) = {Wc1:.2f};  W_cond(2) = {Wc2:.2f};".format(i=i,Wc1=Wc1,Wc2=Wc2))
+
+            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=scenarioName["PreTQ"][i], Wplasma=Wc, 
+                                                   Swetted=Swet_cond_1[i], flagVSactive=True)
+            scenarioName["tvs_preTQ"][i] = tvs_con1
+            scenarioName["isVSactive_PreTQ"][i] = isVS_con1
+            scenarioName["WpreTQ_rad"][i] = ( Wrad(scenarioName["isVSactive_con1"][i], W_cond=Wc, EmaxSwet=Emax_con1*Swet_cond_1[i]) +
+                                              C_rad[i]*Wth)
+            scenarioName["WpreTQ_con"][i]  = Emax_con1 * Swet_cond_1[i]
+            if i == 0:
+                # Calculations for the baffle
+                (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=scenarioName["preTQ"][i], Wplasma=0.3*Wc, 
+                                                    Swetted=scenarioName["S_div"] * Ndiv, flagVSactive=True)
+                scenarioName["isVSactive_preTQ_baffle"][i] = isVS_con1
+                scenarioName["WpreTQ_con_baffle"][i]  = Emax_con1 * scenarioName["S_div"] * Ndiv
+                scenarioName["WTQ_rad"][i] += Wrad(isVS_con1, W_cond=0.3*Wc, EmaxSwet=Emax_con1*scenarioName["S_div"] * Ndiv)
+                scenarioName["WpreTQ_con_baffle"][i]  = Emax_con1 * Swet_cond_1[i]
+
+
     if (phase=="TQ"): 
         C_cond  = [ 0.5 , 1.0 , 0.5 , 0.5 , 1.0 , 1.0 , 0.16, 0.16 ]
         C_rad   = [ 0.0 , 0.0 , 0.0 , 0.0 , 0.0 , 0.0 , 0.64, 0.64 ]
         Wth     = scenarioName["Wth"]
-        RPF     = np.pow(4,peakingFactors) * np.ones(8)     # Radiation peaking factor (TPF x PPF)
-        TPF     = np.ones(8)                                # Conduction toroidal peaking factor 
+        RPF     = 4 * np.ones(8) if peakingFactors==1 else np.ones(8)     # Radiation peaking factor (TPF x PPF)
+        TPF     = np.ones(8)                                              # Conduction toroidal peaking factor 
         tau     = tauTQ(scenarioName) 
-        scenarioName["tauTQ"] = np.ones(8) * tau
+        scenarioName["tauTQ1"] = np.ones(8) * 2.5 * scenarioName["a"]**1.5 * 1e-3 #* tau
+        scenarioName["tauTQ2"] = np.ones(8) * 0.4 * scenarioName["a"] * 1e-3 # * tau * 3
+        fTQ1    = 0.3
+        fTQ2    = 1 - fTQ1 
         
-        for i in range(8):
+        for i in cases:
             # I compute radiation from VS without considering peaking factors: 
             # this way I should have a better approximation, since peaks should average out with troughs
             # --> Final radiation load is the sum of {VS radiation (ramp-up + ramp down)} & {plasma emitted * RPF}
-            Wr1 = 0
-            Wr2 = 0
-            Wc1,Wr1 = SOL(scenarioName=scenarioName,Wcond=0.3*C_cond[i]*Wth)
-            Wc2,Wr2 = SOL(scenarioName=scenarioName,Wcond=0.7*C_cond[i]*Wth)
+            Wc1 = fTQ1*C_cond[i]*Wth
+            Wc2 = fTQ2*C_cond[i]*Wth
 
-            print("TQ: {i}) W_cond(1) = {Wc1:.2f};  W_cond(2) = {Wc2:.2f};".format(i=i,Wc1=Wc1,Wc2=Wc2))
+            # scenarioName["lamGoldston_TQ1"][i] = lambdaMHD(scenarioName=scenarioName,Psep=Wc1/scenarioName["tauTQ1"][i])
+            # scenarioName["lamGoldston_TQ2"][i] = lambdaMHD(scenarioName=scenarioName,Psep=Wc2/scenarioName["tauTQ2"][i])
 
-            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1, Swetted=Swet_cond[i], flagVSactive=True)
-            (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2, Swetted=Swet_cond[i], flagVSactive=True)
+            if i in (0,1,6):
+                Swet_cond_1[i] = SOL( scenarioName=scenarioName , Ndiv=Ndiv )
+                Swet_cond_2[i] = SOL( scenarioName=scenarioName , Ndiv=Ndiv )
+
+            # print("TQ: {i}) W_cond(1) = {Wc1:.2f};  W_cond(2) = {Wc2:.2f};".format(i=i,Wc1=Wc1,Wc2=Wc2))
+
+            (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=scenarioName["tauTQ1"][i], Wplasma=Wc1, 
+                                                   Swetted=Swet_cond_1[i], flagVSactive=True)
+            (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=scenarioName["tauTQ2"][i], Wplasma=Wc2, 
+                                                   Swetted=Swet_cond_1[i], flagVSactive=True)
+            (tvs_con3,Emax_con3,isVS_con3) = Emax1(scenarioName, time=scenarioName["tauTQ1"][i]+scenarioName["tauTQ2"][i], 
+                                                   Wplasma=Wc1+Wc2, 
+                                                   Swetted=Swet_cond_1[i], flagVSactive=True)
             scenarioName["tvs_TQ_con1"][i] = tvs_con1
             scenarioName["tvs_TQ_con2"][i] = tvs_con2
+            scenarioName["tvs_TQ_1step"][i] = tvs_con3
             scenarioName["isVSactive_con1"][i] = isVS_con1
             scenarioName["isVSactive_con2"][i] = isVS_con2
-            scenarioName["WTQ_rad"][i] = ( Wrad(scenarioName["isVSactive_con1"][i], W_cond=Wc1, EmaxSwet=Emax_con1*Swet_cond[i]) +
-                                            Wrad(scenarioName["isVSactive_con2"][i], W_cond=Wc2, EmaxSwet=Emax_con2*Swet_cond[i]) +
-                                            Wr1 + Wr2 +
+            scenarioName["isVSactive_1step"][i] = isVS_con3
+            scenarioName["WTQ_rad"][i] = ( Wrad(scenarioName["isVSactive_con1"][i], W_cond=Wc1, EmaxSwet=Emax_con1*Swet_cond_1[i]) +
+                                            Wrad(scenarioName["isVSactive_con2"][i], W_cond=Wc2, EmaxSwet=Emax_con2*Swet_cond_2[i]) +
                                             C_rad[i]*Wth*RPF[i])
-            # After computing radiation I now compute conducted loads with VS, now considering peaking factors: 
-            # asymmetries in the plasma column (e.g. nonaxisymmetric VDE) may cause nonaxisymmetric loads
-            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau*1, Wplasma=Wc1*TPF[i], Swetted=Swet_cond[i])
-            (tvs_con2,Emax_con2) = Emax1(scenarioName, time=tau*3, Wplasma=Wc2*TPF[i], Swetted=Swet_cond[i])
-            scenarioName["WTQ_con1"][i]  = Emax_con1 * Swet_cond[i]
-            scenarioName["WTQ_con2"][i]  = Emax_con2 * Swet_cond[i]
+            scenarioName["WTQ_1step_rad"][i] = ( Wrad(scenarioName["isVSactive_1step"][i], W_cond=Wc1+Wc2, EmaxSwet=Emax_con3*Swet_cond_1[i]) 
+                                                 + C_rad[i]*Wth*RPF[i] )
+            scenarioName["WTQ_con1"][i]  = Emax_con1 * Swet_cond_1[i]
+            scenarioName["WTQ_con2"][i]  = Emax_con2 * Swet_cond_2[i]
+            scenarioName["WTQ_1step_con"][i]  = Emax_con3 * Swet_cond_1[i]
+            if i in (0,1,6):
+                # Calculations for the baffle
+                (tvs_con1,Emax_con1,isVS_con1) = Emax1(scenarioName, time=scenarioName["tauTQ1"][i], Wplasma=0.3*Wc1, 
+                                                    Swetted=scenarioName["S_div"] * Ndiv, flagVSactive=True)
+                (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=scenarioName["tauTQ2"][i], Wplasma=0.3*Wc2, 
+                                                    Swetted=scenarioName["S_div"] * Ndiv, flagVSactive=True)
+                (tvs_con3,Emax_con3,isVS_con3) = Emax1(scenarioName, time=scenarioName["tauTQ1"][i]+scenarioName["tauTQ2"][i], 
+                                                    Wplasma=0.3*(Wc1+Wc2), 
+                                                    Swetted=scenarioName["S_div"] * Ndiv, flagVSactive=True)
+                scenarioName["isVSactive_con1_baffle"][i] = isVS_con1
+                scenarioName["isVSactive_con2_baffle"][i] = isVS_con2
+                scenarioName["isVSactive_1step_baffle"][i] = isVS_con3
+                scenarioName["WTQ_con1_baffle"][i]  = Emax_con1 * scenarioName["S_div"] * Ndiv
+                scenarioName["WTQ_con2_baffle"][i]  = Emax_con2 * scenarioName["S_div"] * Ndiv
+                scenarioName["WTQ_1step_con_baffle"][i]  = Emax_con3 * scenarioName["S_div"] * Ndiv
+                scenarioName["WTQ_rad"][i] += ( Wrad(isVS_con1, W_cond=0.3*Wc1, EmaxSwet=Emax_con1*scenarioName["S_div"] * Ndiv)
+                                                + Wrad(isVS_con2, W_cond=0.3*Wc2, EmaxSwet=Emax_con2*scenarioName["S_div"] * Ndiv) )
+                scenarioName["WTQ_1step_rad"][i] += Wrad(isVS_con3, W_cond=0.3*(Wc1+Wc2), EmaxSwet=Emax_con3*scenarioName["S_div"] * Ndiv) 
+
+        scenarioName["S_wet_cond_TQ1"] = Swet_cond_1
+        scenarioName["S_wet_cond_TQ2"] = Swet_cond_2
 
     if (phase=="CQ"): 
         C_cond  = C_cond_CQ         # [ 1.0 , 1.0 , 1.0 , 0.7 , 1.0 , 0.7 , 0.2 , 0.2  ]
         C_rad   = 1 - C_cond_CQ     # [ 0.0 , 0.0 , 0.0 , 0.3 , 0.0 , 0.3 , 0.8 , 0.8  ]
-        HCF     = [0.075, 0.075, 0.12, 0.2, 0.12, 0.2 , 0.05, 0.1  ]                           # halo current fractions
-        RPF     = np.pow(1.5**2,peakingFactors) * np.ones(8)                                   # Radiation peaking factor (TPF x PPF)
-        TPF     = np.pow([ 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 1.0 , 1.0 ],peakingFactors)     # Conduction toroidal peaking factor 
-        VDEs    = [False, False, True, True, True, True, False, True]
+        RPF     = 1.5**2 * np.ones(8) if peakingFactors==1 else np.ones(8)                     # Radiation peaking factor (TPF x PPF)
+        TPF     = np.array([ 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 2.0 , 1.0 , 1.0 ]) if peakingFactors==1 else np.ones(8)     # Conduction toroidal peaking factor 
         tau     = np.array([ tauCQlinmin(scenarioName,MDlikely=1)     , tauCQlinmin(scenarioName)                , 
                              tauCQlinmin(scenarioName)                , tauCQlinmin(scenarioName,longCQ=1)       ,
                              tauCQlinmin(scenarioName)                , tauCQlinmin(scenarioName,longCQ=1)       ,
                              tauCQlinmin(scenarioName,mitigatedVDE=1) , tauCQlinmin(scenarioName,mitigatedVDE=1)   ]) 
         scenarioName["tauCQ"] = tau
 
-        for i in range(8):
+        for i in cases:
             # I compute radiation from VS without considering peaking factors: 
             # this way I should have a better approximation, since peaks should average out with troughs
             # --> Final radiation load is the sum of {VS radiation} & {plasma emitted * RPF}
-            Wr = 0
             scenarioName["WthCQ"]     = Wpol(scenarioName)
-            scenarioName["WlossCQ"][i]= Wpol(scenarioName) - Wcoupled(scenarioName,lin_exp=1,VDE=VDEs[i])[i]
-            scenarioName["WcoupCQ"][i]= Wcoupled(scenarioName,lin_exp=1,VDE=VDEs[i])[i]
-            Wc,Wr = SOL(scenarioName=scenarioName, Wcond=C_cond[i]*scenarioName["WlossCQ"][i])
+            scenarioName["WcoupCQ"][i]= Wcoupled(scenarioName,lin_exp=CQ_lin_exp,rescale_a=rescale_a)[i]
+            scenarioName["WlossCQ"][i]= scenarioName["WthCQ"] - scenarioName["WcoupCQ"][i]
+            Wc = scenarioName["WlossCQ"][i] * C_cond_CQ[i]
+
+            scenarioName["lamGoldston_CQ"][i] = lambdaMHD(scenarioName=scenarioName,model="HD")
+
+            if i in (0,1,6):
+                Swet_cond_1[i] = SOL(scenarioName=scenarioName , Ndiv=Ndiv )
 
             print("CQ: {i}) W_cond = {Wc:.2f}".format(i=i,Wc=Wc))
 
             (tvs_con1,Emax_con1,isVS) = Emax1(scenarioName, time=tau[i], Wplasma=Wc, 
-                                              Swetted=Swet_cond[i], flagVSactive=True)
+                                              Swetted=Swet_cond_1[i], flagVSactive=True)
             scenarioName["tvs_CQ_con"][i] = tvs_con1
             scenarioName["isVSactive_CQ"][i] = isVS
             scenarioName["WCQ_rad"][i]  = ( Wrad(scenarioName["isVSactive_CQ"][i], W_cond=Wc, 
-                                                 EmaxSwet=Emax_con1*Swet_cond[i]) +
-                                            Wr +
+                                                 EmaxSwet=Emax_con1*Swet_cond_1[i]) +
                                             C_rad[i]*scenarioName["WlossCQ"][i]*RPF[i])
             # After computing radiation I now compute conducted loads with VS, now considering peaking factors: 
             # asymmetries in the plasma column (e.g. nonaxisymmetric VDE) may cause nonaxisymmetric loads
-            (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=Wc*TPF[i], Swetted=Swet_cond[i])
+            (tvs_con1,Emax_con1,isVS) = Emax1(scenarioName, time=tau[i], Wplasma=Wc*TPF[i], Swetted=Swet_cond_1[i] , flagVSactive=True )
+            scenarioName["isVSactive_CQ"][i] = isVS
             # (tvs_con1,Emax_con1) = Emax1(scenarioName, time=tau[i], Wplasma=C_cond[i]*scenarioName["WlossCQ"][i]*TPF[i], Swetted=Swet_cond[i])
-            scenarioName["WCQ_con"][i] = Emax_con1 * Swet_cond[i]
+            scenarioName["WCQ_con"][i] = Emax_con1 * Swet_cond_1[i]
+            if i in (0,1,6):
+                # Calculations for the baffle
+                (tvs_con2,Emax_con2,isVS_con2) = Emax1(scenarioName, time=scenarioName["tauCQ"][i], Wplasma=0.3*Wc, 
+                                                        Swetted=scenarioName["S_div"] * Ndiv, flagVSactive=True)
+                scenarioName["isVSactive_CQ_baffle"][i] = isVS_con2
+                scenarioName["WCQ_con_baffle"][i]  = Emax_con2 * scenarioName["S_div"] * Ndiv
+                scenarioName["WCQ_rad"][i] +=  Wrad(isVS_con2, W_cond=0.3*Wc, EmaxSwet=Emax_con2*scenarioName["S_div"] * Ndiv)
+        scenarioName["S_wet_cond_CQ"] = Swet_cond_1
+
             
-def RMSE(scenarioName):
+def RMSE(scenarioName, singleCase=None):
+    """
+    Computes the error bars to the model predicted quantities. 
+
+        Input:
+          - scenarioName:   dictionary-type collection of scenarios, for which the 0Dsrupt predictions have already been computed.
+          - singleCase:     (default: None)
+                                set to an integer value from 0 to 7 to run a single specific disruption case
+                                    0 - MD likely       
+                                    1 - MD strong
+                                    2 - cold VDE fast CQ       
+                                    3 - cold VDE slow CQ
+                                    4 - hot VDE fast CQ    
+                                    5 - hot VDE slow CQ     
+                                    6 - mitigated MD
+                                    7 - mitigated VDE 
+    """
     A = deepcopy(SCENARIO)
 
     dC_cond_CQ          = 0.2
@@ -681,9 +963,16 @@ def RMSE(scenarioName):
     A["S_cp"]           = 0
     A["longCQtime"]     = 0.3
     A["WthCQ"]          = 0.1
-    for i in range(len(scenarioName["tauTQ"])):
+    A["lamPreTQ"]       = ( lambdaMHD(scenarioName,model='HD',MHD_turbulence_on=False)
+                            - lambdaMHD(scenarioName,model='Eich',MHD_turbulence_on=False) ) / (2*scenarioName["lamPreTQ"])
+    A["lamTQCQ"]        = A["lamPreTQ"]
+    
+    cases = range(8) if singleCase is None else [singleCase]
+
+    for i in cases:
         A["tauPreTQ"][i]    = [0.16,0,0,0,0,0,0.3,0.3][i]
-        A["tauTQ"][i]       = 0.3
+        A["tauTQ1"][i]      = 0.3
+        A["tauTQ2"][i]      = 0.3
         A["WTQ_con1"][i]    = 0.2
         A["WTQ_con2"][i]    = 0.2
         A["WTQ_rad"][i]     = 0.2
@@ -701,7 +990,7 @@ def RMSE(scenarioName):
 
         A["WCQ_rad"][i]     = A["WCQ_con"][i] * abs( scenarioName["WCQ_con"][i] / scenarioName["WCQ_rad"][i] )
 
-        # If the denominator of some fraction is close to zero...
+        # If the denominator of some fraction is close to zero (making the relative error >100%)...
         if A["WlossCQ"][i] > 1:
             A["WlossCQ"][i] = 0
         if A["WCQ_con"][i] > 1:
@@ -711,7 +1000,7 @@ def RMSE(scenarioName):
 
     return A
 
-def Predictions(scenarioName,additional_output_txt=False):
+def Predictions(scenarioName,additional_output_txt=False,Ndiv=1,PF_TQ=0,PF_CQ=0,rescale_a=1.1,lin_exp=1):
     """
         Predictions of the model are printed in the output file: 
         
@@ -733,6 +1022,14 @@ def Predictions(scenarioName,additional_output_txt=False):
 
     scenarioName["lamEich"] = lamEich
     scenarioName["lamGoldston"] = lam_q
+
+    scenarioName["lamPreTQ"] = ( lambdaMHD(scenarioName=scenarioName,model='HD',MHD_turbulence_on=False)
+                                +lambdaMHD(scenarioName=scenarioName,model='Eich',MHD_turbulence_on=False) )*7/2
+    
+    scenarioName["lamTQCQ"]  =  ( lambdaMHD(scenarioName=scenarioName,model='HD',MHD_turbulence_on=False)
+                                +lambdaMHD(scenarioName=scenarioName,model='Eich',MHD_turbulence_on=False) )*7/2
+                                # ( lambdaMHD(scenarioName=scenarioName,model='HD')
+                                # +lambdaMHD(scenarioName=scenarioName,model='Eich') )/2
 
     def tvs(scenarioName,Wplasma,Swetted) :
         (t,E) = Emax1(scenarioName,1,Wplasma,Swetted=Swetted)
@@ -769,7 +1066,7 @@ def Predictions(scenarioName,additional_output_txt=False):
 
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    W_PFC(scenarioName=scenarioName,phase='TQ',peakingFactors=0)
+    W_PFC(scenarioName=scenarioName,phase='TQ',peakingFactors=PF_TQ,Ndiv=Ndiv)
 
     if additional_output_txt:
         with open(f"{scenarioName['name']}_DisruptionsPredictions.txt", 'a', encoding='utf-8') as f:
@@ -784,8 +1081,8 @@ def Predictions(scenarioName,additional_output_txt=False):
                 +" ms\t\t\t\t ms\t\t\t\tMJ\t\t\t\tMJ\n")
             f.write(
                 "\t1) Major Disruption:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][0]*1e3, 
-                    scenarioName["tauTQ"][0]*3e3, 
+                    scenarioName["tauTQ1"][0]*1e3, 
+                    scenarioName["tauTQ2"][0]*1e3, 
                     scenarioName["Wth"] / 2e6, 
                     0.0, 
                     lam_q * 1e3,
@@ -796,8 +1093,8 @@ def Predictions(scenarioName,additional_output_txt=False):
             
             f.write(
                 "\t2) Major D. strong: \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][1]*1e3, 
-                    scenarioName["tauTQ"][1]*3e3, 
+                    scenarioName["tauTQ1"][1]*1e3, 
+                    scenarioName["tauTQ2"][1]*1e3, 
                     scenarioName["Wth"] / 1e6, 
                     0.0, 
                     lam_q * 1e3,
@@ -808,8 +1105,8 @@ def Predictions(scenarioName,additional_output_txt=False):
             
             f.write(
                 "\t3) Cold VDE, fast CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][2]*1e3, 
-                    scenarioName["tauTQ"][2]*3e3, 
+                    scenarioName["tauTQ1"][2]*1e3, 
+                    scenarioName["tauTQ2"][2]*1e3, 
                     scenarioName["Wth"] / 2e6, 
                     0.0, 
                     lam_q * 1e3,
@@ -820,8 +1117,8 @@ def Predictions(scenarioName,additional_output_txt=False):
 
             f.write(
                 "\t4) Cold VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][3]*1e3, 
-                    scenarioName["tauTQ"][3]*3e3, 
+                    scenarioName["tauTQ1"][3]*1e3, 
+                    scenarioName["tauTQ2"][3]*1e3, 
                     scenarioName["Wth"] / 2e6, 
                     0.0, 
                     lam_q * 1e3,
@@ -832,8 +1129,8 @@ def Predictions(scenarioName,additional_output_txt=False):
 
             f.write(
                 "\t5) Hot VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][4]*1e3, 
-                    scenarioName["tauTQ"][4]*3e3, 
+                    scenarioName["tauTQ1"][4]*1e3, 
+                    scenarioName["tauTQ2"][4]*1e3, 
                     scenarioName["Wth"] / 1e6, 
                     0.0, 
                     lam_q * 1e3,
@@ -844,8 +1141,8 @@ def Predictions(scenarioName,additional_output_txt=False):
             
             f.write(
                 "\t6) Hot VDE, slow CQ:\t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][5]*1e3, 
-                    scenarioName["tauTQ"][5]*3e3, 
+                    scenarioName["tauTQ1"][5]*1e3, 
+                    scenarioName["tauTQ2"][5]*1e3, 
                     scenarioName["Wth"] / 1e6, 
                     0.0, 
                     lam_q * 1e3,
@@ -856,8 +1153,8 @@ def Predictions(scenarioName,additional_output_txt=False):
 
             f.write(
                 "\t7) Mitigated MDs:   \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][6]*1e3, 
-                    scenarioName["tauTQ"][6]*3e3, 
+                    scenarioName["tauTQ1"][6]*1e3, 
+                    scenarioName["tauTQ2"][6]*1e3, 
                     scenarioName["Wth"] / 1e6 * 0.8 * 0.2, 
                     scenarioName["Wth"] / 1e6 * 0.8 ** 2, 
                     lam_q * 1e3,
@@ -868,8 +1165,8 @@ def Predictions(scenarioName,additional_output_txt=False):
 
             f.write(
                 "\t8) Mitigated VDE:   \t{:.3} ms (30% loss)\t\t{:.3} ms (70% loss)\t\t{:.3} MJ\t\t\t\t{:.3} MJ\t\t\t{:.3} mm\t\t\t\t{:.3} ms\t\t\t\t{:.3} ms\t\t\t\t{:.3} MJ\t\t\t\t{:.3} MJ\n".format(
-                    scenarioName["tauTQ"][7]*1e3, 
-                    scenarioName["tauTQ"][7]*3e3, 
+                    scenarioName["tauTQ1"][7]*1e3, 
+                    scenarioName["tauTQ2"][7]*1e3, 
                     scenarioName["Wth"] / 1e6 * 0.8 * 0.2, 
                     scenarioName["Wth"] / 1e6 * 0.8 ** 2, 
                     lam_q * 1e3,
@@ -881,7 +1178,7 @@ def Predictions(scenarioName,additional_output_txt=False):
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~        
     
     HCF = [0.075, 0.075, 0.12, 0.2, 0.12, 0.2 , 0.05, 0.1  ]              # halo current fractions
-    W_PFC(scenarioName=scenarioName,phase='CQ',peakingFactors=0)
+    W_PFC(scenarioName=scenarioName,phase='CQ',peakingFactors=PF_CQ,Ndiv=Ndiv,rescale_a=rescale_a,CQ_lin_exp=lin_exp)
 
     if additional_output_txt:
         WthCQ = np.ones(8)
