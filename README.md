@@ -8,7 +8,7 @@ The code needs to be downloaded on a Microsoft device with a Python compiler.
 
 1) Make a copy of the TemplateRun directory and open it
 2) Fill in the "Inputs_template.xlsx" file with the flat-top quantities of the plasma equilibrium whose possible disruptions you intend to study.
-2) Open "run.py" and choose what you want 0Dsrupt to do. Every run.py file must contain at least one between:
+3) Open "run.py" and choose what you want 0Dsrupt to do. Every run.py file must contain at least one between:
       a) Predictions()  -->  runs the model across the three phases (pre-TQ, TQ, CQ) of all eight disruption types
       b) W_PFC()        -->  runs the model through the one phase specified when calling it, either for all disruption types or just for one.
                              (if you use W_PFC instead of Predictions, you need to call it once for each phase of the disruption)
@@ -19,5 +19,6 @@ The code needs to be downloaded on a Microsoft device with a Python compiler.
                              (if q/q_melt > 1, some part of the wall is melting. If marked with an "X", it is vaporising).
       c) Melt4plot()    -->  plots the final temperature and erosion depth of four PFCs (divertor strike points, baffles, limiters, inboard/outboard wall)
                              at the end of TQ and of CQ. TQ plots include melting & temperature rise of pre-TQ phase when this phase is present and when
-                             an estimate of its duration is available within the 0Dsrupt model (mitigated disruptions and "likely MD" types) 
+                             an estimate of its duration is available within the 0Dsrupt model (mitigated disruptions and "likely MD" types)
+4) Run 0Dsrupt opening a terminal in the directory and simply typing "python run.py" (or a python interactive / ipython terminal and launch "run run").
    
