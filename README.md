@@ -1,3 +1,6 @@
+<img width="490" height="325" alt="image" src="https://github.com/user-attachments/assets/f1c43ed8-5eb4-48ef-bcda-8def62504e0c" />
+
+
 0Dsrupt is a 0-dimensional code for the computation of heat loads on walls during a disruption.
 
 A publication is underway, containing a detailed description of its physical model, along with a validation against JET data and a showcase of its capabilities.
