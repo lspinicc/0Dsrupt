@@ -7,7 +7,7 @@ A publication is underway, containing a detailed description of its physical mod
 For the time being, please refer to the Pinboard version:
 https://pinboard.euro-fusion.org/repository/pinboard/EFDA-JET/journal/126629_manuscript_soft2026_externaluse.pdf 
 
-The code needs to be downloaded on a Microsoft device with a Python compiler.
+The code needs to be downloaded on a device with a Python compiler and install the requirements from "Requirements.md".
 
 1) Make a copy of the TemplateRun directory and open it
 2) Fill in the "Inputs_template.xlsx" file with the flat-top quantities of the plasma equilibrium whose possible disruptions you intend to study.
